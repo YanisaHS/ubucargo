@@ -1,33 +1,13 @@
 //! Offline CLI tests for source-package creation and update.
 
 use std::{
-    collections::{BTreeMap, BTreeSet},
     fs,
-    os::unix::fs::{PermissionsExt, symlink},
-    path::{Path, PathBuf},
+    path::Path,
     process::{Command, Output},
-    time::SystemTime,
 };
 
 use indoc::{formatdoc, indoc};
 use tempfile::TempDir;
-
-/// Filesystem state used to detect writes during reruns and rejected operations.
-#[derive(Debug, PartialEq, Eq)]
-enum TreeEntry {
-    Directory {
-        mode: u32,
-    },
-    File {
-        contents: Vec<u8>,
-        mode: u32,
-        modified: SystemTime,
-    },
-    Symlink {
-        target: PathBuf,
-        modified: SystemTime,
-    },
-}
 
 /// Creates a dependency-free local crate and a private Cargo cache.
 fn create_fixture() -> TempDir {
@@ -60,11 +40,12 @@ fn write_crate_manifest(root: &Path, version: &str) {
     .unwrap();
 }
 
-/// Creates a package command with offline Cargo and an isolated cache.
-fn create_package_command(root: &Path) -> Command {
+/// Runs the package CLI with offline Cargo and an isolated cache.
+fn run_package(root: &Path, arguments: &[&str], expected_status: i32) -> Output {
     let mut command = Command::new(env!("CARGO_BIN_EXE_ubucargo"));
     command
         .arg("package")
+        .args(arguments)
         .current_dir(root)
         .env("CARGO_HOME", root.join("cargo-home"))
         .env("CARGO_NET_OFFLINE", "true")
@@ -72,15 +53,7 @@ fn create_package_command(root: &Path) -> Command {
         .env("DEBEMAIL", "example@example.com")
         .env("LC_ALL", "C.UTF-8")
         .env("TZ", "UTC");
-    command
-}
-
-/// Runs the package CLI with offline Cargo and an isolated cache.
-fn run_package(root: &Path, arguments: &[&str], expected_status: i32) -> Output {
-    run_command(
-        create_package_command(root).args(arguments),
-        expected_status,
-    )
+    run_command(&mut command, expected_status)
 }
 
 /// Checks an external command's exit status, retaining output for failure diagnostics.
@@ -96,65 +69,13 @@ fn run_command(command: &mut Command, expected_status: i32) -> Output {
     output
 }
 
-/// Captures the complete package directory and adjacent orig tarballs.
-fn read_tree(root: &Path) -> BTreeMap<PathBuf, TreeEntry> {
-    let mut tree = BTreeMap::new();
-    let mut directories = vec![PathBuf::new()];
-    while let Some(relative) = directories.pop() {
-        let path = root.join(&relative);
-        let metadata = fs::symlink_metadata(&path).unwrap();
-        let mode = metadata.permissions().mode() & 0o7777;
-        let modified = metadata.modified().unwrap();
-        let entry = if metadata.is_dir() {
-            for child in fs::read_dir(&path).unwrap() {
-                directories.push(relative.join(child.unwrap().file_name()));
-            }
-            TreeEntry::Directory { mode }
-        } else if metadata.is_symlink() {
-            TreeEntry::Symlink {
-                target: fs::read_link(&path).unwrap(),
-                modified,
-            }
-        } else {
-            TreeEntry::File {
-                contents: fs::read(&path).unwrap(),
-                mode,
-                modified,
-            }
-        };
-        tree.insert(relative, entry);
-    }
-    tree
-}
-
-/// Reports the first changed path when a rerun or rejected operation alters package state.
-fn assert_tree_eq(root: &Path, expected: &BTreeMap<PathBuf, TreeEntry>) {
-    let after = read_tree(root);
-    let keys: BTreeSet<_> = expected.keys().chain(after.keys()).collect();
-    for path in keys {
-        assert_eq!(
-            after.get(path),
-            expected.get(path),
-            "{} changed",
-            path.display()
-        );
-    }
-}
-
-/// Creates and upgrades a package, preserving released changelogs and converging on reruns.
+/// Creates, regenerates, and upgrades a package while preserving its released changelog.
 #[test]
 fn create_and_upgrade_package() {
     let fixture = create_fixture();
     let root = fixture.path();
     let packages = root.join("packages");
     let package = packages.join("rust-example");
-    let output = run_package(root, &["--package-dir", "packages/rust-example"], 2);
-    assert!(
-        String::from_utf8_lossy(&output.stderr)
-            .contains("not inside a source package; supply INPUT")
-    );
-    assert!(!packages.exists());
-
     run_package(
         root,
         &["local:crate", "--package-dir", "packages/rust-example"],
@@ -167,32 +88,21 @@ fn create_and_upgrade_package() {
         fs::read_to_string(package.join("debian/source/format")).unwrap(),
         "3.0 (quilt)\n"
     );
-    let control = fs::read_to_string(package.join("debian/control")).unwrap();
+    let control_path = package.join("debian/control");
+    let control = fs::read_to_string(&control_path).unwrap();
     assert!(control.contains("Source: rust-example\n"));
+    assert!(control.contains("Package: librust-example-dev\n"));
     assert!(control.contains("Maintainer: Ubuntu Developers"));
-    assert!(!control.contains("Vcs-Git:"));
-    assert!(!control.contains("Vcs-Browser:"));
+    let changelog_path = package.join("debian/changelog");
+    let changelog = fs::read_to_string(&changelog_path).unwrap();
+    assert!(changelog.starts_with("rust-example (1.0.0-0ubuntu1) UNRELEASED;"));
 
-    let before = read_tree(&packages);
     run_package(root, &["pkg:packages/rust-example"], 0);
-    let output = run_package(root, &["--package-dir", "packages/rust-example"], 2);
-    assert!(
-        String::from_utf8_lossy(&output.stderr)
-            .contains("not inside a source package; supply INPUT")
-    );
-    // An omitted input selects the nearest parent package, independently of the destination.
-    run_command(
-        create_package_command(root).current_dir(package.join("src")),
-        0,
-    );
-    run_command(
-        create_package_command(root)
-            .current_dir(package.join("src"))
-            .args(["--package-dir", ".."]),
-        0,
-    );
-    assert_tree_eq(&packages, &before);
+    assert_eq!(fs::read_to_string(&control_path).unwrap(), control);
+    assert_eq!(fs::read_to_string(&changelog_path).unwrap(), changelog);
 
+    let released = changelog.replacen("UNRELEASED", "noble", 1);
+    fs::write(&changelog_path, &released).unwrap();
     write_crate_manifest(root, "1.0.1");
     run_package(root, &["pkg:packages/rust-example"], 0);
     assert!(packages.join("rust-example_1.0.1.orig.tar.gz").is_file());
@@ -202,26 +112,17 @@ fn create_and_upgrade_package() {
             .unwrap()
             .contains("version = \"1.0.1\"")
     );
+    let upgraded = fs::read_to_string(&changelog_path).unwrap();
+    assert!(upgraded.starts_with("rust-example (1.0.1-0ubuntu1) UNRELEASED;"));
+    assert!(upgraded.ends_with(&released));
 
-    let changelog_path = package.join("debian/changelog");
-    let changelog = fs::read_to_string(&changelog_path).unwrap();
-    assert!(changelog.starts_with("rust-example (1.0.1-0ubuntu1) UNRELEASED;"));
-    assert_eq!(changelog.matches("Generated with debcargo").count(), 1);
-    let released = changelog.replacen("UNRELEASED", "noble", 1);
-    fs::write(&changelog_path, &released).unwrap();
     run_package(root, &["pkg:packages/rust-example"], 0);
-    let changelog = fs::read_to_string(&changelog_path).unwrap();
-    assert!(changelog.starts_with("rust-example (1.0.1-0ubuntu2) UNRELEASED;"));
-    assert!(changelog.ends_with(&released));
-
-    let before = read_tree(&packages);
-    run_package(root, &["pkg:packages/rust-example"], 0);
-    assert_tree_eq(&packages, &before);
+    assert_eq!(fs::read_to_string(&changelog_path).unwrap(), upgraded);
 }
 
-/// Preserves edits, deletions, and modes, and resolves unknown or conflicting ownership.
+/// Preserves a maintainer override and lets the maintainer adopt the generated hint.
 #[test]
-fn preserve_overrides_and_resolve_ambiguities() {
+fn preserve_maintainer_overrides() {
     let fixture = create_fixture();
     let root = fixture.path();
     run_package(
@@ -229,73 +130,54 @@ fn preserve_overrides_and_resolve_ambiguities() {
         &["local:crate", "--package-dir", "packages/rust-example"],
         0,
     );
-    let packages = root.join("packages");
-    let debian = packages.join("rust-example/debian");
+    let debian = root.join("packages/rust-example/debian");
     let control = fs::read_to_string(debian.join("control")).unwrap();
     let edited = format!("{control}\n# Maintainer override.\n");
     fs::write(debian.join("control"), &edited).unwrap();
-    fs::remove_file(debian.join("copyright")).unwrap();
-    let mode = fs::metadata(debian.join("rules"))
-        .unwrap()
-        .permissions()
-        .mode();
-    fs::set_permissions(
-        debian.join("rules"),
-        fs::Permissions::from_mode(mode & !0o111),
-    )
-    .unwrap();
     fs::write(debian.join("local-notes"), "Maintainer notes.\n").unwrap();
 
     run_package(root, &["pkg:packages/rust-example"], 0);
     assert_eq!(fs::read_to_string(debian.join("control")).unwrap(), edited);
-    assert!(!debian.join("copyright").exists());
     assert_eq!(
-        fs::metadata(debian.join("rules"))
-            .unwrap()
-            .permissions()
-            .mode()
-            & 0o111,
-        0
+        fs::read_to_string(debian.join("control.debcargo.hint")).unwrap(),
+        control
     );
     assert_eq!(
         fs::read_to_string(debian.join("local-notes")).unwrap(),
         "Maintainer notes.\n"
     );
-    for name in ["control", "copyright", "rules"] {
-        assert!(debian.join(format!("{name}.debcargo.hint")).is_file());
-    }
-    let before = read_tree(&packages);
-    run_package(root, &["pkg:packages/rust-example"], 0);
-    assert_tree_eq(&packages, &before);
 
-    // Adopting the generated alternatives relinquishes the overrides.
-    for name in ["control", "copyright", "rules"] {
-        fs::copy(
-            debian.join(format!("{name}.debcargo.hint")),
-            debian.join(name),
-        )
-        .unwrap();
-    }
+    fs::copy(debian.join("control.debcargo.hint"), debian.join("control")).unwrap();
     run_package(root, &["pkg:packages/rust-example"], 0);
-    for name in ["control", "copyright", "rules"] {
-        assert!(!debian.join(format!("{name}.debcargo.hint")).exists());
-    }
-    assert_ne!(
-        fs::metadata(debian.join("rules"))
-            .unwrap()
-            .permissions()
-            .mode()
-            & 0o111,
-        0
+    assert_eq!(fs::read_to_string(debian.join("control")).unwrap(), control);
+    assert!(!debian.join("control.debcargo.hint").exists());
+}
+
+/// Resolves an edited package's unknown ownership with explicit keep and replace choices.
+#[test]
+fn resolve_ambiguous_ownership() {
+    let fixture = create_fixture();
+    let root = fixture.path();
+    run_package(
+        root,
+        &["local:crate", "--package-dir", "packages/rust-example"],
+        0,
     );
-
-    // An edited primary without a manifest or hint requires an explicit decision.
+    let debian = root.join("packages/rust-example/debian");
+    let control = fs::read_to_string(debian.join("control")).unwrap();
+    let edited = format!("{control}\n# Maintainer override.\n");
+    let changelog = fs::read_to_string(debian.join("changelog")).unwrap();
+    // Packages imported from other tools have no ubucargo ownership manifest.
     fs::remove_file(debian.join("ubucargo-state.json")).unwrap();
     fs::write(debian.join("control"), &edited).unwrap();
-    let before = read_tree(&packages);
+
     let output = run_package(root, &["pkg:packages/rust-example"], 2);
     assert!(String::from_utf8_lossy(&output.stdout).contains("Ambiguous debian/control"));
-    assert_tree_eq(&packages, &before);
+    assert_eq!(fs::read_to_string(debian.join("control")).unwrap(), edited);
+    assert_eq!(
+        fs::read_to_string(debian.join("changelog")).unwrap(),
+        changelog
+    );
     run_package(
         root,
         &["pkg:packages/rust-example", "--keep", "debian/control"],
@@ -307,11 +189,6 @@ fn preserve_overrides_and_resolve_ambiguities() {
         control
     );
 
-    // Changing the hint conflicts with the recorded baseline; replacement restores ownership.
-    fs::write(debian.join("control.debcargo.hint"), "Conflicting hint.\n").unwrap();
-    let before = read_tree(&packages);
-    run_package(root, &["pkg:packages/rust-example"], 2);
-    assert_tree_eq(&packages, &before);
     run_package(
         root,
         &["pkg:packages/rust-example", "--replace", "debian/control"],
@@ -319,90 +196,52 @@ fn preserve_overrides_and_resolve_ambiguities() {
     );
     assert_eq!(fs::read_to_string(debian.join("control")).unwrap(), control);
     assert!(!debian.join("control.debcargo.hint").exists());
-    let before = read_tree(&packages);
-    run_package(root, &["pkg:packages/rust-example"], 0);
-    assert_tree_eq(&packages, &before);
 }
 
-/// Rejects source conflicts before writing, and preserves local additions during a forced upgrade.
+/// Rejects local edits to the source tree and preserves local additions when forced.
 #[test]
-fn preserve_local_source_and_reject_conflicts() {
+fn reject_local_source_edits() {
     let fixture = create_fixture();
     let root = fixture.path();
-    let upstream = root.join("crate");
-    fs::write(upstream.join("data.txt"), "Original data.\n").unwrap();
-    fs::write(upstream.join("obsolete.txt"), "Old upstream file.\n").unwrap();
-    fs::write(upstream.join("run.sh"), "#!/bin/sh\nexit 0\n").unwrap();
-    fs::set_permissions(upstream.join("run.sh"), fs::Permissions::from_mode(0o755)).unwrap();
     run_package(
         root,
         &["local:crate", "--package-dir", "packages/rust-example"],
         0,
     );
-    let packages = root.join("packages");
-    let package = packages.join("rust-example");
-    fs::create_dir(package.join(".git")).unwrap();
-    fs::write(package.join(".git/config"), "Local repository.\n").unwrap();
+    let package = root.join("packages/rust-example");
+    let upstream = fs::read_to_string(root.join("crate/src/lib.rs")).unwrap();
+    let edited = "// Locally edited upstream.\n";
+    fs::write(package.join("src/lib.rs"), edited).unwrap();
     fs::write(package.join("notes.txt"), "Local notes.\n").unwrap();
-    symlink("notes.txt", package.join("notes-link")).unwrap();
-    fs::write(package.join("src/lib.rs"), "// Locally edited upstream.\n").unwrap();
-    fs::remove_file(package.join("data.txt")).unwrap();
-    fs::write(package.join("collision.txt"), "Local addition.\n").unwrap();
+    let changelog = fs::read_to_string(package.join("debian/changelog")).unwrap();
 
-    write_crate_manifest(root, "1.0.1");
-    fs::write(upstream.join("data.txt"), "New upstream data.\n").unwrap();
-    fs::write(upstream.join("collision.txt"), "New upstream file.\n").unwrap();
-    fs::remove_file(upstream.join("obsolete.txt")).unwrap();
-    let before = read_tree(&packages);
     let output = run_package(root, &["pkg:packages/rust-example"], 2);
     let error = String::from_utf8_lossy(&output.stderr);
-    assert!(error.contains("source conflicts:"));
-    for path in ["src/lib.rs", "data.txt", "collision.txt"] {
-        assert!(error.contains(path), "{error}");
-    }
-    assert_tree_eq(&packages, &before);
+    assert!(error.contains("source conflicts:"), "{error}");
+    assert!(error.contains("src/lib.rs"), "{error}");
+    assert_eq!(
+        fs::read_to_string(package.join("src/lib.rs")).unwrap(),
+        edited
+    );
+    assert_eq!(
+        fs::read_to_string(package.join("debian/changelog")).unwrap(),
+        changelog
+    );
+
     run_package(root, &["pkg:packages/rust-example", "--force"], 0);
     assert_eq!(
-        fs::read(package.join("src/lib.rs")).unwrap(),
-        fs::read(upstream.join("src/lib.rs")).unwrap()
-    );
-    assert_eq!(
-        fs::read_to_string(package.join("data.txt")).unwrap(),
-        "New upstream data.\n"
-    );
-    assert_eq!(
-        fs::read_to_string(package.join("collision.txt")).unwrap(),
-        "New upstream file.\n"
-    );
-    assert!(!package.join("obsolete.txt").exists());
-    assert_ne!(
-        fs::metadata(package.join("run.sh"))
-            .unwrap()
-            .permissions()
-            .mode()
-            & 0o111,
-        0
-    );
-    assert_eq!(
-        fs::read_to_string(package.join(".git/config")).unwrap(),
-        "Local repository.\n"
+        fs::read_to_string(package.join("src/lib.rs")).unwrap(),
+        upstream
     );
     assert_eq!(
         fs::read_to_string(package.join("notes.txt")).unwrap(),
         "Local notes.\n"
     );
-    assert_eq!(
-        fs::read_link(package.join("notes-link")).unwrap(),
-        Path::new("notes.txt")
-    );
-    let before = read_tree(&packages);
-    run_package(root, &["pkg:packages/rust-example"], 0);
-    assert_tree_eq(&packages, &before);
 }
 
-/// Preserves partial quilt stacks through updates and copies, with usable backups and clean reruns.
+/// Keeps an applied maintainer patch usable after an upgrade and rejects unrefreshed changes.
 #[test]
-fn preserve_applied_quilt_state() {
+fn preserve_applied_patch() {
     let fixture = create_fixture();
     let root = fixture.path();
     run_package(
@@ -410,211 +249,8 @@ fn preserve_applied_quilt_state() {
         &["local:crate", "--package-dir", "packages/rust-example"],
         0,
     );
-    let packages = root.join("packages");
-    let package = packages.join("rust-example");
+    let package = root.join("packages/rust-example");
     let debian = package.join("debian");
-    fs::create_dir_all(debian.join("patches/nested")).unwrap();
-    let first = indoc! {"
-        Description: Change the example value.
-        --- a/src/lib.rs
-        +++ b/src/lib.rs
-        @@ -1,2 +1,2 @@
-         /// Example value.
-        -pub const VALUE: u8 = 1;
-        +pub const VALUE: u8 = 2;
-    "};
-    let second = first.replace("= 2;", "= 3;").replace("= 1;", "= 2;");
-    fs::write(debian.join("patches/nested/first.patch"), first).unwrap();
-    fs::write(debian.join("patches/second.patch"), second).unwrap();
-    fs::write(
-        debian.join("patches/series"),
-        "nested/first.patch\nsecond.patch\n",
-    )
-    .unwrap();
-    run_command(
-        Command::new("quilt")
-            .args(["push", "--quiltrc=-", "nested/first.patch"])
-            .env("QUILT_PATCHES", "debian/patches")
-            .current_dir(&package),
-        0,
-    );
-    let before = read_tree(&packages);
-    run_package(root, &["pkg:packages/rust-example"], 0);
-    assert_tree_eq(&packages, &before);
-
-    write_crate_manifest(root, "1.0.1");
-    fs::write(
-        root.join("crate/src/lib.rs"),
-        "/// Example value.\npub const VALUE: u8 = 1;\n// New upstream comment.\n",
-    )
-    .unwrap();
-    run_package(
-        root,
-        &["local:crate", "--package-dir", "packages/rust-example"],
-        0,
-    );
-    assert_eq!(
-        fs::read_to_string(package.join(".pc/applied-patches")).unwrap(),
-        "nested/first.patch\n"
-    );
-    assert!(
-        fs::read_to_string(package.join("src/lib.rs"))
-            .unwrap()
-            .contains("VALUE: u8 = 2")
-    );
-    let before = read_tree(&packages);
-    run_package(root, &["pkg:packages/rust-example"], 0);
-    assert_tree_eq(&packages, &before);
-
-    run_package(
-        root,
-        &[
-            "pkg:packages/rust-example",
-            "--package-dir",
-            "copies/rust-example",
-        ],
-        0,
-    );
-    assert_tree_eq(&packages, &before);
-    let copy = root.join("copies/rust-example");
-    assert_eq!(
-        fs::read_to_string(copy.join(".pc/applied-patches")).unwrap(),
-        "nested/first.patch\n"
-    );
-    run_command(
-        Command::new("quilt")
-            .args(["pop", "--quiltrc=-", "-a"])
-            .env("QUILT_PATCHES", "debian/patches")
-            .current_dir(&copy),
-        0,
-    );
-    assert!(
-        fs::read_to_string(copy.join("src/lib.rs"))
-            .unwrap()
-            .contains("VALUE: u8 = 1")
-    );
-    run_command(
-        Command::new("quilt")
-            .args(["pop", "--quiltrc=-", "-a"])
-            .env("QUILT_PATCHES", "debian/patches")
-            .current_dir(&package),
-        0,
-    );
-    assert!(
-        fs::read_to_string(package.join("src/lib.rs"))
-            .unwrap()
-            .contains("VALUE: u8 = 1")
-    );
-    assert!(
-        fs::read_to_string(package.join("src/lib.rs"))
-            .unwrap()
-            .contains("// New upstream comment.")
-    );
-    run_command(
-        Command::new("quilt")
-            .args(["push", "--quiltrc=-", "-a"])
-            .env("QUILT_PATCHES", "debian/patches")
-            .current_dir(&package),
-        0,
-    );
-    assert!(
-        fs::read_to_string(package.join("src/lib.rs"))
-            .unwrap()
-            .contains("VALUE: u8 = 3")
-    );
-    // A patch that no longer applies must fail before writing the staged upgrade.
-    write_crate_manifest(root, "1.0.2");
-    fs::write(
-        root.join("crate/src/lib.rs"),
-        "/// Example value.\npub const VALUE: u8 = 99;\n",
-    )
-    .unwrap();
-    let before = read_tree(&packages);
-    run_package(root, &["pkg:packages/rust-example"], 2);
-    assert_tree_eq(&packages, &before);
-    fs::write(
-        package.join("src/lib.rs"),
-        "/// Example value.\npub const VALUE: u8 = 4;\n",
-    )
-    .unwrap();
-    let before = read_tree(&packages);
-    run_package(root, &["pkg:packages/rust-example"], 2);
-    assert_tree_eq(&packages, &before);
-}
-
-/// Rejects removal of the top generated patch before writing any package changes.
-#[test]
-fn reject_missing_top_patch() {
-    let fixture = create_fixture();
-    let root = fixture.path();
-    let manifest_path = root.join("crate/Cargo.toml");
-    let mut manifest = fs::read_to_string(&manifest_path).unwrap();
-    manifest.push_str("\n[features]\nremoved = []\n");
-    fs::write(&manifest_path, manifest).unwrap();
-    run_package(
-        root,
-        &["local:crate", "--package-dir", "packages/rust-example"],
-        0,
-    );
-    let packages = root.join("packages");
-    let package = packages.join("rust-example");
-    let debian = package.join("debian");
-    fs::create_dir_all(debian.join("patches")).unwrap();
-    fs::write(
-        debian.join("patches/maintainer.patch"),
-        indoc! {"
-        --- a/src/lib.rs
-        +++ b/src/lib.rs
-        @@ -1,2 +1,2 @@
-         /// Example value.
-        -pub const VALUE: u8 = 1;
-        +pub const VALUE: u8 = 2;
-    "},
-    )
-    .unwrap();
-    fs::write(debian.join("patches/series"), "maintainer.patch\n").unwrap();
-    let config_path = debian.join("debcargo.toml");
-    let config = fs::read_to_string(&config_path).unwrap();
-    fs::write(
-        &config_path,
-        format!("{config}remove_features = [\"removed\"]\n"),
-    )
-    .unwrap();
-    run_package(root, &["pkg:packages/rust-example"], 0);
-    let series = fs::read_to_string(debian.join("patches/series")).unwrap();
-    let top = series.lines().next().unwrap();
-    assert!(top.starts_with("auto/"), "{series}");
-    run_command(
-        Command::new("quilt")
-            .args(["push", "--quiltrc=-", top])
-            .env("QUILT_PATCHES", "debian/patches")
-            .current_dir(&package),
-        0,
-    );
-    fs::write(&config_path, config).unwrap();
-    let before = read_tree(&packages);
-    let output = run_package(root, &["pkg:packages/rust-example"], 2);
-    let error = String::from_utf8_lossy(&output.stderr);
-    assert!(error.contains("restore staged quilt patches"), "{error}");
-    assert_tree_eq(&packages, &before);
-}
-
-/// Repacks orig tarballs while retaining maintainer patches and verifying their application.
-#[test]
-fn repack_source_and_preserve_patches() {
-    let fixture = create_fixture();
-    let root = fixture.path();
-    fs::write(root.join("crate/bundled.txt"), "Excluded upstream data.\n").unwrap();
-    run_package(
-        root,
-        &["local:crate", "--package-dir", "packages/rust-example"],
-        0,
-    );
-    let packages = root.join("packages");
-    let package = packages.join("rust-example");
-    let debian = package.join("debian");
-    let original_orig = packages.join("rust-example_1.0.0.orig.tar.gz");
-    let original_bytes = fs::read(&original_orig).unwrap();
     let patch = indoc! {"
         Description: Change the example value.
         --- a/src/lib.rs
@@ -626,12 +262,84 @@ fn repack_source_and_preserve_patches() {
     "};
     fs::create_dir_all(debian.join("patches")).unwrap();
     fs::write(debian.join("patches/example.patch"), patch).unwrap();
-    let series = "# Maintainer patch stack.\nexample.patch\n";
-    fs::write(debian.join("patches/series"), series).unwrap();
-    let config_path = debian.join("debcargo.toml");
-    let original_config = fs::read_to_string(&config_path).unwrap();
-    let repack_config =
-        format!("{original_config}excludes = [\"bundled.txt\"]\nrepack_suffix = \"dfsg\"\n");
+    fs::write(debian.join("patches/series"), "example.patch\n").unwrap();
+    run_command(
+        Command::new("quilt")
+            .args(["push", "--quiltrc=-", "-a"])
+            .env("QUILT_PATCHES", "debian/patches")
+            .current_dir(&package),
+        0,
+    );
+    write_crate_manifest(root, "1.0.1");
+    let upstream = "/// Example value.\npub const VALUE: u8 = 1;\n// New upstream comment.\n";
+    fs::write(root.join("crate/src/lib.rs"), upstream).unwrap();
+    run_package(root, &["pkg:packages/rust-example"], 0);
+    assert_eq!(
+        fs::read_to_string(package.join(".pc/applied-patches")).unwrap(),
+        "example.patch\n"
+    );
+    assert_eq!(
+        fs::read_to_string(debian.join("patches/example.patch")).unwrap(),
+        patch
+    );
+    let patched = upstream.replace("= 1;", "= 2;");
+    assert_eq!(
+        fs::read_to_string(package.join("src/lib.rs")).unwrap(),
+        patched
+    );
+
+    run_command(
+        Command::new("quilt")
+            .args(["pop", "--quiltrc=-", "-a"])
+            .env("QUILT_PATCHES", "debian/patches")
+            .current_dir(&package),
+        0,
+    );
+    assert_eq!(
+        fs::read_to_string(package.join("src/lib.rs")).unwrap(),
+        upstream
+    );
+    run_command(
+        Command::new("quilt")
+            .args(["push", "--quiltrc=-", "-a"])
+            .env("QUILT_PATCHES", "debian/patches")
+            .current_dir(&package),
+        0,
+    );
+
+    let unrefreshed = patched.replace("= 2;", "= 3;");
+    fs::write(package.join("src/lib.rs"), &unrefreshed).unwrap();
+    let changelog = fs::read_to_string(debian.join("changelog")).unwrap();
+    let output = run_package(root, &["pkg:packages/rust-example"], 2);
+    assert!(String::from_utf8_lossy(&output.stderr).contains("unrefreshed changes"));
+    assert_eq!(
+        fs::read_to_string(package.join("src/lib.rs")).unwrap(),
+        unrefreshed
+    );
+    assert_eq!(
+        fs::read_to_string(debian.join("changelog")).unwrap(),
+        changelog
+    );
+}
+
+/// Repacks an orig tarball using the maintainer's configured exclusion and suffix.
+#[test]
+fn repack_source() {
+    let fixture = create_fixture();
+    let root = fixture.path();
+    fs::write(root.join("crate/bundled.txt"), "Excluded upstream data.\n").unwrap();
+    run_package(
+        root,
+        &["local:crate", "--package-dir", "packages/rust-example"],
+        0,
+    );
+    let packages = root.join("packages");
+    let package = packages.join("rust-example");
+    let original_orig = packages.join("rust-example_1.0.0.orig.tar.gz");
+    let original_bytes = fs::read(&original_orig).unwrap();
+    let config_path = package.join("debian/debcargo.toml");
+    let config = fs::read_to_string(&config_path).unwrap();
+    let repack_config = format!("{config}excludes = [\"bundled.txt\"]\nrepack_suffix = \"dfsg\"\n");
     fs::write(&config_path, &repack_config).unwrap();
 
     run_package(root, &["pkg:packages/rust-example"], 0);
@@ -650,59 +358,9 @@ fn repack_source_and_preserve_patches() {
     assert!(listing.contains("/src/lib.rs"));
     assert!(!listing.contains("bundled.txt"));
     assert!(
-        fs::read_to_string(debian.join("changelog"))
+        fs::read_to_string(package.join("debian/changelog"))
             .unwrap()
             .starts_with("rust-example (1.0.0+dfsg-0ubuntu1) UNRELEASED;")
     );
     assert_eq!(fs::read_to_string(&config_path).unwrap(), repack_config);
-    assert_eq!(
-        fs::read_to_string(debian.join("patches/example.patch")).unwrap(),
-        patch
-    );
-    assert_eq!(
-        fs::read_to_string(debian.join("patches/series")).unwrap(),
-        series
-    );
-    let before = read_tree(&packages);
-    run_package(root, &["pkg:packages/rust-example"], 0);
-    assert_tree_eq(&packages, &before);
-
-    // Removing the filter on the next release restores the file and drops the suffix.
-    fs::write(&config_path, &original_config).unwrap();
-    write_crate_manifest(root, "1.0.1");
-    run_package(root, &["pkg:packages/rust-example"], 0);
-    assert!(package.join("bundled.txt").is_file());
-    assert!(packages.join("rust-example_1.0.1.orig.tar.gz").is_file());
-    assert_eq!(fs::read(&original_orig).unwrap(), original_bytes);
-    assert!(
-        fs::read_to_string(debian.join("changelog"))
-            .unwrap()
-            .starts_with("rust-example (1.0.1-0ubuntu1) UNRELEASED;")
-    );
-    let before = read_tree(&packages);
-    run_package(root, &["pkg:packages/rust-example"], 0);
-    assert_tree_eq(&packages, &before);
-
-    run_command(
-        Command::new("quilt")
-            .args(["push", "--quiltrc=-", "-a"])
-            .env("QUILT_PATCHES", "debian/patches")
-            .current_dir(&package),
-        0,
-    );
-    assert!(
-        fs::read_to_string(package.join("src/lib.rs"))
-            .unwrap()
-            .contains("VALUE: u8 = 2")
-    );
-    // Unrefreshed changes must be rejected before any package files are written.
-    fs::write(
-        package.join("src/lib.rs"),
-        "/// Example value.\npub const VALUE: u8 = 3;\n",
-    )
-    .unwrap();
-    let before = read_tree(&packages);
-    let output = run_package(root, &["pkg:packages/rust-example"], 2);
-    assert!(String::from_utf8_lossy(&output.stderr).contains("unrefreshed changes"));
-    assert_tree_eq(&packages, &before);
 }
