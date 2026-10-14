@@ -1,0 +1,13 @@
+Source: rust-example
+Build-Depends: librust-foo-1-dev (>= 1.0), librust-foo-1+default-dev (>= 1.0),
+ librust-foo-1+derive-dev (>= 1.0), librust-build-dev
+
+Package: librust-example-dev
+Architecture: all
+Depends: ${misc:Depends}, librust-foo-1-dev (>= 1.0), librust-foo-1+default-dev (>= 1.0),
+ librust-foo-1+derive-dev (>= 1.0)
+
+Package: example-tool
+Architecture: any
+Depends: ${misc:Depends}, librust-foo-1-dev (>= 1.0),
+ librust-foo-1+default-dev (>= 1.0), librust-utility-dev

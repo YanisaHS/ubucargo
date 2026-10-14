@@ -1,0 +1,4 @@
+Tests: smoke
+Depends: @, @builddeps@, librust-foo-1-dev (>= 1.0),
+ librust-foo-1+default-dev (>= 1.0), librust-foo-1+derive-dev (>= 1.0),
+ librust-build-dev, librust-utility-dev, librust-test-dev

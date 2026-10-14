@@ -1,0 +1,25 @@
+Package: librust-foo-dev
+Version: 1.2.0-1
+Architecture: all
+Source: rust-foo
+Description: Library with default and derive features
+Provides: librust-foo-1-dev (= 1.2.0-1), librust-foo-1+default-dev (= 1.2.0-1), librust-foo-1+derive-dev (= 1.2.0-1)
+
+Package: librust-build-dev
+Version: 0.2.0-1
+Architecture: all
+Source: rust-build
+Description: Build dependency
+
+Package: librust-utility-dev
+Version: 1.0.0-1
+Architecture: all
+Source: rust-utility
+Description: Binary dependency
+
+Package: librust-test-dev
+Version: 0.4.0-1
+Architecture: all
+Source: rust-test
+Description: Test dependency
+
