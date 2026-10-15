@@ -1,36 +1,23 @@
 //! Acquires existing orig tarballs used as source-merge baselines.
 
 use std::{
+    fs,
     path::{Path, PathBuf},
     process::Command,
 };
 
 use anyhow::{Context, Result};
 
-use crate::util::run_streaming_command;
-use tempfile::TempDir;
+use crate::{changelog::TopChangelog, util::run_streaming_command};
 
-use crate::changelog::TopChangelog;
-
-/// An old orig path and any temporary directory that keeps it alive.
-pub struct OrigBaseline {
-    /// Existing or downloaded orig tarball.
-    pub path: PathBuf,
-    /// Download directory, retained until update is complete.
-    _temporary: Option<TempDir>,
-}
-
-/// Finds the old orig locally or downloads the exact Launchpad source.
-pub fn acquire_old_orig(root: &Path, top: &TopChangelog) -> Result<OrigBaseline> {
+/// Finds the old orig locally or downloads and saves it beside the package.
+pub fn acquire_old_orig(root: &Path, top: &TopChangelog) -> Result<PathBuf> {
     let parent = root.parent().context("package root has no parent")?;
     if let Some(local) = find_orig(parent, top) {
-        return Ok(OrigBaseline {
-            path: local,
-            _temporary: None,
-        });
+        return Ok(local);
     }
 
-    let download = tempfile::tempdir().context("create orig download directory")?;
+    let download = tempfile::tempdir_in(parent).context("create orig download directory")?;
     eprintln!("Downloading orig {} {} ...", top.source, top.version);
     run_streaming_command(
         Command::new("pull-lp-source")
@@ -49,10 +36,11 @@ pub fn acquire_old_orig(root: &Path, top: &TopChangelog) -> Result<OrigBaseline>
             top.source, top.upstream
         )
     })?;
-    Ok(OrigBaseline {
-        path: orig,
-        _temporary: Some(download),
-    })
+    let destination = parent.join(orig.file_name().context("orig has no filename")?);
+    // The download directory shares the destination filesystem, so this move is atomic.
+    fs::rename(&orig, &destination)
+        .with_context(|| format!("save orig tarball {}", destination.display()))?;
+    Ok(destination)
 }
 
 /// Finds the main orig tarball using the compression formats supported by dpkg-source.

@@ -50,10 +50,10 @@ impl SourcePackage {
         let root = stage.path().join("source");
         copy_tree(&self.root, &root)?;
         fs::copy(
-            &baseline.path,
+            &baseline,
             stage
                 .path()
-                .join(baseline.path.file_name().context("orig has no filename")?),
+                .join(baseline.file_name().context("orig has no filename")?),
         )?;
         self.root = root;
         self._stage = Some(stage);

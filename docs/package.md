@@ -180,7 +180,7 @@ When repacking is not required, debcargo copies the verified `.crate` archive un
 
 The next package's repack suffix comes only from `debian/debcargo.toml`: an explicit `repack_suffix` is used as written, otherwise it defaults to `ds` when `excludes` is present, or no suffix when it is absent. The existing changelog identifies the old package and does not supply a suffix for the next one. To retain `+dfsg` from an existing version such as `1.0.0+dfsg-1`, set `repack_suffix = "dfsg"` in the configuration.
 
-For an existing package, the old orig tarball is the source-merge baseline. Its source name and upstream version come from the top changelog entry. Ubucargo first looks beside the package, then uses `pull-lp-source --download-only <SOURCE> <VERSION>` to retrieve that exact Ubuntu source version independently of the host's configured APT series. Acquisition happens before the staged changelog is changed.
+For an existing package, the old orig tarball is the source-merge baseline. Its source name and upstream version come from the top changelog entry. Ubucargo first looks beside the package, then uses `pull-lp-source --download-only <SOURCE> <VERSION>` to retrieve that exact Ubuntu source version independently of the host's configured APT series. The verified orig is saved beside the existing package immediately and remains available for retries if a later step fails. Acquisition happens before the staged changelog is changed.
 
 When the source name changes, the existing changelog still identifies the old orig baseline. The generated orig is written beside it under the new source name; the old orig remains available.
 
@@ -327,7 +327,7 @@ ubucargo package --replace debian/control
 
 `--keep` accepts ambiguous paths, preserves the primary, and writes a hint if the generated alternative exists and differs. `--replace` accepts any managed path and adopts its freshly generated state: it installs the generated contents and permissions when present, or deletes the primary when generation produces absence. It also removes any hint. Both options record fresh generated state in the manifest for files that support overrides. They may be repeated for several paths; each path may be named by only one option.
 
-If any ambiguity remains, `package` reports every affected path and makes no changes.
+If any ambiguity remains, `package` reports every affected path and preserves the package tree.
 
 Restoring a primary to its hint contents and permissions relinquishes the override; the next run resumes automatic updates and removes the redundant hint. Generated output converging on the override also removes its hint. Ubucargo does not merge file contents or retain older history.
 

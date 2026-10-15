@@ -176,7 +176,7 @@ pub fn run(args: PackageArgs) -> Result<()> {
         }
         let old_orig = acquire_old_orig(&existing.root, &existing.top_changelog)?;
         let base = tempfile::tempdir().context("create old-source extraction directory")?;
-        extract_tree(&old_orig.path, base.path())?;
+        extract_tree(&old_orig, base.path())?;
         Some(base)
     } else {
         None
