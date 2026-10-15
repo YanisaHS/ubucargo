@@ -3,18 +3,18 @@ crates.io availability: 1.0.0
 ubuntu:resolute availability: not packaged
 
 Package: librust-example-dev
-DEPENDENCY  STATUS     LOCATION           VERSION  REQUIREMENT
-foo         preferred  resolute/universe  1.2.0-1  1 (>=1.0) +derive
+DEPENDENCY  STATUS    LOCATION           VERSION  REQUIREMENT
+foo         selected  resolute/universe  1.2.0-1  1 (>=1.0) +derive
 
 Package: example-tool
-DEPENDENCY  STATUS     LOCATION           VERSION  REQUIREMENT
-foo         preferred  resolute/universe  1.2.0-1  1 (>=1.0)
-utility     preferred  resolute/universe  1.0.0-1  * -default
+DEPENDENCY  STATUS    LOCATION           VERSION  REQUIREMENT
+foo         selected  resolute/universe  1.2.0-1  1 (>=1.0)
+utility     selected  resolute/universe  1.0.0-1  * -default
 
 Source: rust-example
-DEPENDENCY  STATUS     LOCATION           VERSION  REQUIREMENT
-build       preferred  resolute/universe  0.2.0-1  * -default
+DEPENDENCY  STATUS    LOCATION           VERSION  REQUIREMENT
+build       selected  resolute/universe  0.2.0-1  * -default
 
 Tests: rust-example
-DEPENDENCY  STATUS     LOCATION           VERSION  REQUIREMENT
-test        preferred  resolute/universe  0.4.0-1  * -default
+DEPENDENCY  STATUS    LOCATION           VERSION  REQUIREMENT
+test        selected  resolute/universe  0.4.0-1  * -default

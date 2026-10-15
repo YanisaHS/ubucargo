@@ -438,7 +438,7 @@ fn classify(table: &DependencyTable, candidates: &CandidateIndex<'_>) -> Vec<Row
             let status = if !compatible {
                 "incompatible"
             } else if index == 0 {
-                "preferred"
+                "selected"
             } else {
                 "available"
             };
@@ -696,7 +696,7 @@ fn format_tables(tables: &[(&DependencyTable, Vec<Row>)], color: bool) -> String
         for row in rows {
             let status = if color {
                 let code = match row.status {
-                    "preferred" => GREEN,
+                    "selected" => GREEN,
                     "available" | "unknown" => GRAY,
                     "incompatible" => YELLOW,
                     "missing" => RED,

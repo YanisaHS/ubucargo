@@ -152,7 +152,7 @@ fn check_required_features() {
             &[
                 "foo",
                 if has_derive {
-                    "preferred"
+                    "selected"
                 } else {
                     "incompatible"
                 },
@@ -199,7 +199,7 @@ fn filter_architecture_and_profile_requirements() {
             &report,
             &[
                 name,
-                "preferred",
+                "selected",
                 "resolute/universe",
                 "1.0.0-1",
                 "*",
@@ -237,7 +237,7 @@ fn report_unsatisfied_dependencies() {
         &report,
         &[
             "compatiblecrate",
-            "preferred",
+            "selected",
             "resolute/universe",
             "1.0.0-1",
             "*",
@@ -338,7 +338,7 @@ fn accept_negated_dependency_architectures() {
         &report,
         &[
             "included",
-            "preferred",
+            "selected",
             "resolute/universe",
             "1.0.0-1",
             "*",
@@ -370,7 +370,7 @@ fn accept_multiple_profiles_in_one_group() {
         &report,
         &[
             "included",
-            "preferred",
+            "selected",
             "resolute/universe",
             "1.0.0-1",
             "*",

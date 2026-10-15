@@ -88,7 +88,7 @@ The report shows each dependency and its candidates:
 ```text
 Package: librust-example-dev
 DEPENDENCY  STATUS        LOCATION                            VERSION      REQUIREMENT
-serde       preferred     ppa:example/rust-staging (resolute)    1.0.219-1    1 +derive
+serde       selected      ppa:example/rust-staging (resolute)    1.0.219-1    1 +derive
             available     resolute-updates/universe              1.0.217-1    1 +derive
 syn         incompatible  resolute/universe                      1.0.109-2    2 -default
 foo         missing       -                                   -            3
@@ -120,19 +120,19 @@ Default features are implicit in the report. A negative entry `-default` is used
 
 Statuses have the following meanings:
 
-- `preferred`: the first compatible candidate in descending version order;
+- `selected`: the first compatible candidate in descending version order;
 - `available`: another version or origin also satisfies the dependency;
 - `incompatible`: packages for the crate exist, but none satisfy the required Debian version constraints and features;
 - `missing`: no package for the crate exists in the selected sources; and
 - `unknown`: requires manual assessment; see [dependency alternatives](#dependency-alternatives).
 
-When standard output is a terminal, statuses are colored green for `preferred`, dark gray for `available` and `unknown`, yellow for `incompatible`, and red for `missing`. The version expression and each `+feature` in `REQUIREMENT` are colored independently: yellow when a corresponding package exists but is incompatible, and red when it is missing. A hidden default-feature requirement is reflected in the base version color. `-default` has the same color as the base version because it is contextual information rather than a requirement that candidates must satisfy. Satisfied components remain neutral on every row, reserving green for the `preferred` status. Set `NO_COLOR` to disable colors; redirected output is always plain text.
+When standard output is a terminal, statuses are colored green for `selected`, dark gray for `available` and `unknown`, yellow for `incompatible`, and red for `missing`. The version expression and each `+feature` in `REQUIREMENT` are colored independently: yellow when a corresponding package exists but is incompatible, and red when it is missing. A hidden default-feature requirement is reflected in the base version color. `-default` has the same color as the base version because it is contextual information rather than a requirement that candidates must satisfy. Satisfied components remain neutral on every row, reserving green for the `selected` status. Set `NO_COLOR` to disable colors; redirected output is always plain text.
 
-When a dependency requires multiple feature packages, one candidate must provide all of them for the dependency to be preferred or available.
+When a dependency requires multiple feature packages, one candidate must provide all of them for the dependency to be selected or available.
 
 Ubuntu Archive locations are shown as `<SUITE>/<COMPONENT>`, Debian archive locations as `debian:<SUITE>/<COMPONENT>`, and PPA locations appear as `ppa:<OWNER>/<NAME> (<SERIES>)` and omit the component, which is always `main`.
 
-The report checks direct Rust dependency candidate availability in the APT sources constructed from the command arguments. For supported Rust relations, each dependency is checked independently against its required package names, Debian version constraints, and features. `preferred` identifies the highest-version compatible candidate for that dependency. Use `sbuild` and `autopkgtest` to validate complete build and test environments, including transitive dependencies and joint installability.
+The report checks direct Rust dependency candidate availability in the APT sources constructed from the command arguments. For supported Rust relations, each dependency is checked independently against its required package names, Debian version constraints, and features. `selected` identifies the highest-version compatible candidate for that dependency. Use `sbuild` and `autopkgtest` to validate complete build and test environments, including transitive dependencies and joint installability.
 
 In all modes, candidates are ordered deterministically from the local APT indexes.
 
