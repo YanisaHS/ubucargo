@@ -31,7 +31,7 @@ pub fn acquire_old_orig(root: &Path, top: &TopChangelog) -> Result<OrigBaseline>
     }
 
     let download = tempfile::tempdir().context("create orig download directory")?;
-    eprintln!("Downloading {} {} ...", top.source, top.version);
+    eprintln!("Downloading orig {} {} ...", top.source, top.version);
     run_streaming_command(
         Command::new("pull-lp-source")
             .arg("--download-only")

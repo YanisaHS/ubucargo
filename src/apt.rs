@@ -565,7 +565,10 @@ pub fn retrieve_source(
         );
     }
     // Authentication comes from the signed Sources checksum; uploader keys need not be installed.
-    eprintln!("Downloading {} {} ...", source.source, source.version);
+    eprintln!(
+        "Downloading package {} {} ...",
+        source.source, source.version
+    );
     run_streaming_command(
         Command::new("dget")
             .args([
