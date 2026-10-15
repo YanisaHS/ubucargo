@@ -9,7 +9,11 @@ permissions:
   contents: read
 
 jobs:
+  check:
+    uses: ./.github/workflows/ci.yml
+
   publish:
+    needs: check
     if: github.repository == 'canonical/ubucargo'
     runs-on: ubuntu-24.04
     environment: crates-io
