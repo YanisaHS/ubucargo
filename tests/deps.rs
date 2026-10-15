@@ -322,7 +322,6 @@ fn compare_representative_report() {
 // Upstream fix: https://github.com/jelmer/debian-parsers/pull/483
 // Re-enable after upgrading debian-control to a release containing the fix.
 #[test]
-#[ignore = "debian-control 0.3.17 rejects negated dependency architecture restrictions"]
 fn accept_negated_dependency_architectures() {
     let control = indoc! {"
         Source: rust-example
@@ -353,7 +352,6 @@ fn accept_negated_dependency_architectures() {
 // Parsing follow-up: https://github.com/jelmer/debian-parsers/pull/486
 // Re-enable after upgrading debian-control to a release containing the fix.
 #[test]
-#[ignore = "debian-control 0.3.17 splits profile conjunctions into alternatives"]
 fn accept_multiple_profiles_in_one_group() {
     let control = indoc! {"
         Source: rust-example
