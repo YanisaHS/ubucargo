@@ -237,8 +237,8 @@ impl ManagedPlan {
 /// - `inferred_bases`: Candidate baselines used only when both a manifest entry and a
 ///   hint are missing, and only if the primary matches the candidate's contents and
 ///   executable status. This allows ubucargo to recognize a raw debcargo 'debian/control'
-///   output (before Ubuntu-specific changes to 'Maintainers' and VCS fields), allowing it
-///   to be smoothly migrated without needing a manual '--keep' or '--replace' decision.
+///   output with the imported Standards-Version (before Ubuntu maintainer adjustments
+///   and VCS-field removal), allowing it to be migrated automatically.
 /// - `keep`: Ambiguous paths for which to preserve the current primary, including absence.
 /// - `replace`: Managed paths for which to adopt the latest generated state, including
 ///   absence. A path cannot appear in both `keep` and `replace`; `keep` requires ambiguity.

@@ -182,8 +182,8 @@ pub fn run(args: PackageArgs) -> Result<()> {
         None
     };
     let generated = generate_package(&resolved, args.keep_staging)?;
-    // Capture debcargo's raw control before Ubuntu adjustments so an unchanged
-    // existing control can establish ownership without a manifest entry or hint.
+    // Capture debcargo's raw control before Ubuntu adjustments so a
+    // matching imported control can establish ownership during migration.
     let raw_control = read_state(&generated.source.join("debian/control"))?;
     remove_generated_vcs_fields(generated.stage.path())?;
     update_staged_maintainer(generated.stage.path())?;
@@ -311,7 +311,23 @@ fn build_update_plan(
     let managed = collect_managed_paths(&debian, &generated_candidates)?;
     let control = PathBuf::from("debian/control");
     let mut inferred_bases = BTreeMap::new();
-    if let Some(raw_control) = raw_control {
+    if let Some(mut raw_control) = raw_control {
+        // Compare against the imported policy version so generator version drift
+        // alone can establish ownership. The actual generated output stays intact.
+        if let Ok(existing_control) = Control::from_file(debian.join("control"))
+            && let Some(version) = existing_control
+                .source()
+                .and_then(|source| source.standards_version())
+        {
+            let candidate: Control = std::str::from_utf8(&raw_control.contents)?
+                .parse()
+                .context("parse raw generated debian/control")?;
+            candidate
+                .source()
+                .context("raw generated control has no source paragraph")?
+                .set_standards_version(&version);
+            raw_control.contents = candidate.to_string().into_bytes();
+        }
         inferred_bases.insert(control, raw_control);
     }
     let mut generated_plan = build_plan(

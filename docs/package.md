@@ -316,7 +316,7 @@ Without either baseline, `package` initializes only cases that cannot overwrite 
 | present | different from `old` | Stop without writing; require `--keep` or `--replace` |
 | present | absent               | Preserve the primary and record generated absence     |
 
-When neither a manifest entry nor a hint exists, ubucargo also checks whether the existing `debian/control` exactly matches debcargo's freshly generated control output before Ubuntu maintainer adjustments and VCS-field removal. This establishes generator ownership so those adjustments can be applied without requiring a one-time `--replace debian/control` decision solely because ubucargo changes those fields. If the existing file does not match the raw output, this inference supplies no baseline and the rules above apply.
+When neither a manifest entry nor a hint exists, ubucargo also compares the existing `debian/control` with debcargo's freshly generated control output before Ubuntu maintainer adjustments and VCS-field removal. For this comparison, the candidate uses the existing source paragraph's `Standards-Version`; all other contents and executable status must match exactly. A match establishes generator ownership, allowing ubucargo to adopt the generated policy version and apply its Ubuntu adjustments automatically. Other differences follow the baseline rules above.
 
 For an ambiguous path, the user may disambiguate by supplying a `--keep` or `--replace` option using a package-relative path:
 
