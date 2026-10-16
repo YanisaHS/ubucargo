@@ -8,7 +8,7 @@ ubucargo package [<INPUT> [<VERSION>]] [--package-dir <DIR>] \
   [--keep-staging] [--keep <PATH>]... [--replace <PATH>]...
 ```
 
-`package` creates or updates a complete Debian source package: upstream source, orig tarball, generated packaging, configuration, the ownership manifest, and generated-file hints.
+`package` creates or updates a Debian source tree and orig tarball. The source tree includes upstream source, generated packaging, configuration, the ownership manifest, and generated-file hints. The orig tarball is placed beside the source directory.
 
 `--keep-staging` retains the printed temporary debcargo staging directory for inspection, including when generation fails.
 
@@ -190,7 +190,7 @@ If the candidate orig path already exists, ubucargo reuses it when its bytes mat
 
 ### Source merge
 
-Ubucargo compares three trees outside `debian/`:
+Upgrading to a new upstream release or repacking after changing `excludes` in `debian/debcargo.toml` can add, change, or remove upstream files. When updating an existing package, ubucargo compares three trees outside `debian/`:
 
 - `base`: the source extracted from the old orig tarball;
 - `old`: a copy of the current working source with quilt patches unapplied; and
@@ -205,7 +205,7 @@ Paths are updated conservatively:
 | Path absent from both `base` and `new` | Preserve the local-only path                            |
 | Any other difference                   | Report a conflict and make no changes                   |
 
-This preserves VCS administration directories, local CI files, and build artifacts when they are absent from both upstream trees, without inspecting a particular VCS. A newly introduced upstream path that conflicts with a local-only path is reported rather than overwritten.
+This preserves VCS administration directories, local CI files, and build artifacts when they are absent from both upstream trees, without inspecting a particular VCS. A newly introduced upstream path that conflicts with a local-only path is reported with an error rather than overwritten.
 
 Before writing to the destination, Ubucargo restores the input's quilt position in the updated staging copy, as described below.
 

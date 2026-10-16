@@ -41,7 +41,7 @@ use self::{
 mod managed;
 mod output;
 
-/// Create or update a complete source package.
+/// Create or update a Debian source tree and orig tarball.
 #[derive(clap::Args)]
 pub struct PackageArgs {
     /// Crate, published source, package, or local input; defaults to the nearest package.

@@ -31,7 +31,7 @@ enum Command {
     /// Inspect archive candidates for a crate's direct Rust dependencies.
     Deps(deps::DepArgs),
 
-    /// Create or update a complete source package.
+    /// Create or update a Debian source tree and orig tarball.
     Package(package::PackageArgs),
 }
 

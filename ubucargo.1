@@ -1,0 +1,363 @@
+.TH UBUCARGO 1 "2026-10-16" "ubucargo 0.1.1" "User Commands"
+.SH NAME
+ubucargo \- create and maintain Ubuntu packages for Rust crates
+.SH SYNOPSIS
+.B ubucargo package
+.RI [ options ]
+.RI [ INPUT " [" VERSION ]]
+.br
+.B ubucargo deps
+.RI [ options ]
+.RI [ INPUT " [" VERSION ]]
+.br
+.B ubucargo
+.RB { \-h | \-\-help | \-V | \-\-version }
+.SH DESCRIPTION
+.B ubucargo
+wraps debcargo to create and maintain Ubuntu source packages for Rust crates.
+It keeps configuration and generated-file ownership state inside the package's
+.B debian
+directory, alongside maintainer changes.
+Package generation requires debcargo 2.8.4 or a later compatible 2.x release.
+.PP
+Ubucargo is experimental; its command-line interface may change.
+.SH COMMANDS
+.SS package
+Create or update a Debian source tree and orig tarball.
+The source tree includes upstream sources, Debian packaging, and configuration.
+The orig tarball is placed beside the source directory.
+Regeneration uses
+.B debian/debcargo.toml
+and preserves maintainer overrides.
+Generated alternatives to overridden files are written to corresponding
+.B .debcargo.hint
+files.
+Ambiguous ownership may require an explicit
+.B \-\-keep
+or
+.B \-\-replace
+decision.
+.PP
+When upgrading to a new upstream release or repacking the source, ubucargo
+compares the working tree with the old and new upstream sources.
+Files unchanged from the old upstream are updated automatically, and local
+additions are retained when compatible with the new upstream.
+Source conflicts require maintainer resolution or
+.BR \-\-force .
+Updates are staged and validated before writing to the destination.
+Applied quilt patches are restored to their original position in staging.
+.PP
+Regenerating a released package creates a new
+.B UNRELEASED
+changelog entry; subsequent runs update that entry.
+.SS deps
+Inspect archive candidates for the direct Rust library dependencies needed to
+build and install the selected package's binary packages and run applicable
+autopkgtests.
+For local and published source packages, this inspection is based on the existing control files;
+for crates.io and local Cargo inputs, it is based on temporary packaging generated with default
+configuration.
+This command does not modify existing packages.
+.PP
+Each dependency is checked independently for compatible package names,
+Debian version constraints, and features.
+The report groups dependencies by binary package, source, and test, and
+classifies candidates as
+.BR selected ,
+.BR available ,
+.BR incompatible ,
+.BR missing ,
+or
+.BR unknown .
+Complex dependency alternatives are reported as
+.B unknown
+for manual assessment.
+Use
+.BR sbuild (1)
+and
+.BR autopkgtest (1)
+to validate complete build and test environments, including transitive
+dependencies and joint installability.
+.SS help
+Print general help or help for a subcommand with
+.B ubucargo help
+.RI [ COMMAND ].
+.SH INPUT AND VERSION SELECTION
+Both commands accept the following input selectors.
+Paths are relative to the working directory.
+.TP
+.BI crate: NAME
+Select a crates.io crate.
+A bare
+.I NAME
+has the same meaning.
+.I VERSION
+selects an exact Cargo version; the default is the latest eligible stable,
+non-yanked release.
+.TP
+.BI ubuntu: SUITE / SOURCE
+Select a published Ubuntu source package by its Debian source name.
+.IB SUITE / SOURCE
+is shorthand for the same input.
+A base series selects release, updates, and security in main and universe.
+A suite ending in
+.BR \-updates ,
+.BR \-security ,
+.BR \-proposed ,
+or
+.B \-backports
+selects that pocket alone.
+.I VERSION
+selects an exact Debian source version; the default is the highest published
+version in the selected indexes.
+.TP
+.BI debian: SUITE / SOURCE
+Select a published Debian source package from the exact named suite in main.
+.I VERSION
+selects an exact Debian source version; the default is the highest published
+version in that suite.
+.TP
+.BI ppa: OWNER / NAME / SERIES / SOURCE
+Select a published source package from a public Launchpad PPA.
+All four fields are required.
+.I VERSION
+selects an exact Debian source version; the default is the highest published
+version in the selected Ubuntu series.
+.TP
+.BI pkg: PATH
+Select an existing source package containing
+.B debian/control
+and
+.BR debian/changelog .
+An input of
+.BR . ,
+.BR .. ,
+or a path beginning with
+.BR ./ ,
+.BR ../ ,
+or
+.B /
+also selects a source package.
+The package supplies its current version.
+.TP
+.BI local: PATH
+Select a local Cargo crate containing a root
+.BR Cargo.toml ,
+which supplies the version.
+For
+.BR package ,
+.B \-\-package-dir
+is required, and the input and destination must be separate, non-nested
+directory trees.
+.PP
+Omitting
+.I INPUT
+selects the nearest directory at or above the working directory containing
+.B debian/control
+and
+.BR debian/changelog .
+.SH PACKAGE OPTIONS
+.TP
+.BI \-\-package-dir " DIR"
+Select the destination directory.
+Package inputs default to their existing directory; a different destination
+receives a regenerated copy and must be new.
+Published inputs require a new destination, defaulting to
+.BI ./ SOURCE .
+Crates.io inputs default to the nearest parent source package, or to the
+generated Debian source name in the working directory.
+For crates.io and local Cargo inputs, an existing destination supplies
+configuration and maintainer changes for the same crate.
+.TP
+.B \-\-force
+Resolve source-tree conflicts by adopting the selected upstream state for
+paths owned by either the old or new upstream tree.
+Local-only paths remain preserved.
+The old orig tarball is required as the merge baseline, and an existing
+destination orig tarball must match the generated contents.
+.TP
+.BI \-\-keep " PATH"
+Preserve an ambiguous primary file when ownership baselines are missing or
+conflict, and record the fresh generated state.
+Write a hint when a generated alternative exists and differs.
+.I PATH
+is relative to the package directory.
+Repeat this option for multiple paths.
+.TP
+.BI \-\-replace " PATH"
+Adopt a managed path's freshly generated contents and permissions, or delete
+the primary if generation produces absence.
+Remove its hint and record fresh generated state for paths supporting
+maintainer overrides.
+.I PATH
+is relative to the package directory.
+Repeat this option for multiple paths.
+Each path may be named by only one of
+.B \-\-keep
+and
+.BR \-\-replace .
+.SH DEPS OPTIONS
+.TP
+.BI \-\-suite " SUITE"
+Select the dependency-checking environment as
+.BI ubuntu: SUITE
+or
+.BI debian: SUITE .
+A bare suite name selects Ubuntu.
+Debian inputs default to their exact suite; Ubuntu and PPA inputs default to
+their base Ubuntu series.
+Crates.io and local inputs default to the current Ubuntu development series
+reported by
+.BR "ubuntu-distro-info \-\-devel" .
+A base Ubuntu series selects release, updates, and security in main and
+universe; a suite with a pocket suffix selects that pocket alone.
+A Debian suite selects exactly that suite in main.
+.TP
+.B \-\-proposed
+Include the proposed pocket of a base Ubuntu checking suite.
+Requires an Ubuntu checking suite.
+.TP
+.BI \-\-ppa " ppa:OWNER/NAME"
+Add a public Launchpad PPA for the checking suite's base Ubuntu series.
+Repeat this option for multiple PPAs.
+Requires an Ubuntu checking suite.
+For Ubuntu checking suites, a PPA input also automatically includes its PPA.
+.TP
+.BI \-\-architecture " ARCH"
+Select the Debian architecture used to check dependencies and filter
+autopkgtests.
+Defaults to the host's native architecture as reported by
+.BR "dpkg \-\-print-architecture" .
+.SH COMMON OPTIONS
+.TP
+.B \-\-keep-staging
+Retain and print temporary staging directories for inspection, including
+on failure.
+Available with both subcommands.
+.TP
+.BR \-h ", " \-\-help
+Print help for the command or subcommand.
+.TP
+.BR \-V ", " \-\-version
+Print the program version.
+Available on the top-level command.
+.SH ENVIRONMENT
+.TP
+.B NO_COLOR
+Disable colored dependency output when set.
+Redirected output is plain text.
+.TP
+.B XDG_CACHE_HOME
+Store the shared APT metadata cache under
+.BR $XDG_CACHE_HOME/ubucargo/apt .
+.TP
+.B HOME
+When
+.B XDG_CACHE_HOME
+is unset, store the APT cache under
+.BR $HOME/.cache/ubucargo/apt .
+.SH FILES
+.TP
+.B debian/debcargo.toml
+Package generation configuration.
+A relative
+.B crate_src_path
+is resolved against the directory containing this file.
+.TP
+.B debian/ubucargo-state.json
+Latest generated content hashes and executable status used to recognize
+maintainer overrides during regeneration.
+.TP
+.IB PATH .debcargo.hint
+Latest generated alternative for an overridden packaging file.
+Adopting the hint's contents and permissions allows automatic updates to
+resume on the next run.
+.TP
+.B ~/.cache/ubucargo/apt/
+Shared, signature-verified APT metadata cache, used for dependency inspection
+and published source selection.
+Each invocation refreshes the selected indexes and reuses unchanged data.
+.SH EXIT STATUS
+.TP
+.B 0
+Successful package generation, or every reported direct Rust dependency has
+a compatible candidate.
+Help and version requests also exit successfully.
+.TP
+.B 1
+Dependency inspection completed with at least one incompatible, missing,
+or unknown dependency.
+.TP
+.B 2
+Command-line, generation, source-conflict, network, metadata, or other error.
+.SH EXAMPLES
+Create or update the latest serde package:
+.PP
+.nf
+.RS
+ubucargo package serde
+.RE
+.fi
+.PP
+Select an exact release and destination:
+.PP
+.nf
+.RS
+ubucargo package serde 1.0.220 \-\-package-dir ./rust-serde
+.RE
+.fi
+.PP
+Regenerate the source package containing the working directory:
+.PP
+.nf
+.RS
+ubucargo package
+.RE
+.fi
+.PP
+Create a package from a local Cargo crate:
+.PP
+.nf
+.RS
+ubucargo package local:../example \-\-package-dir ./rust-example
+.RE
+.fi
+.PP
+Preserve a maintainer's control file when ownership is ambiguous:
+.PP
+.nf
+.RS
+ubucargo package \-\-keep debian/control
+.RE
+.fi
+.PP
+Inspect a crates.io crate against Debian unstable:
+.PP
+.nf
+.RS
+ubucargo deps serde \-\-suite debian:unstable
+.RE
+.fi
+.PP
+Inspect Ubuntu packaging against another Ubuntu series with a PPA:
+.PP
+.nf
+.RS
+ubucargo deps ubuntu:resolute/rust-serde \-\-suite jammy \e
+    \-\-ppa ppa:owner/staging
+.RE
+.fi
+.SH SEE ALSO
+.BR debcargo (1),
+.BR cargo (1),
+.BR dch (1),
+.BR quilt (1),
+.BR sbuild (1),
+.BR autopkgtest (1)
+.PP
+Detailed command specifications and cache documentation are available in
+the project's
+.BR docs/
+directory:
+.UR https://github.com/canonical/ubucargo
+.UE
