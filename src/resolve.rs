@@ -244,10 +244,8 @@ pub fn get_crate_source_name(crate_name: &str, semver_suffix: Option<&Version>) 
     source
 }
 
-/// Resolves the latest crate release using debcargo's version-selection logic.
-/// This is done by using `debcargo extract`. This technically does more than needed
-/// at this stage (it actually retrieves the crate), but it avoids us needing to
-/// duplicate the version-selection logic.
+/// Resolves the latest non-yanked stable crate release using debcargo.
+/// An explicit wildcard requirement excludes prereleases from automatic selection.
 fn resolve_latest(crate_name: &str, config: &PackageConfig) -> Result<CrateSelection> {
     let stage = tempfile::tempdir().context("create latest-version staging directory")?;
     fs::create_dir(stage.path().join("overlay"))?;
@@ -260,6 +258,7 @@ fn resolve_latest(crate_name: &str, config: &PackageConfig) -> Result<CrateSelec
             .arg("--directory")
             .arg(stage.path().join("output"))
             .arg(crate_name)
+            .arg("*")
             .current_dir(stage.path()),
         "debcargo extract",
     )?;

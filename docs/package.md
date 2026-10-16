@@ -41,7 +41,7 @@ For Ubuntu Archive inputs, `<SUITE>` is either a base series or a series with a 
 
 For Debian inputs, `<SUITE>` selects exactly that suite from `https://deb.debian.org/debian` in `main`, for example `unstable`, `sid`, `testing`, or `trixie`. Version selection uses the same Debian ordering and deterministic ties as Ubuntu Archive inputs. Regeneration prepares the selected Debian packaging for Ubuntu, including the Ubuntu maintainer adjustment and changelog conventions described below.
 
-For crates.io inputs, omitting `<VERSION>` asks debcargo and Cargo for the greatest release matching an unconstrained dependency, excluding yanked releases and prereleases. An exact request may select a prerelease or yanked release.
+For crates.io inputs, omitting `<VERSION>` asks debcargo and Cargo for the greatest release matching Cargo's `*` requirement, excluding yanked releases and prereleases. An exact request may select a prerelease or yanked release. Crates published only as prereleases require an exact version.
 
 For dependency-checking suites, pockets, and additional PPAs, see [`ubucargo deps`](deps.md).
 

@@ -94,6 +94,8 @@ has the same meaning.
 .I VERSION
 selects an exact Cargo version; the default is the latest eligible stable,
 non-yanked release.
+An exact request may select a prerelease or yanked release.
+Crates published only as prereleases require an exact version.
 .TP
 .BI ubuntu: SUITE / SOURCE
 Select a published Ubuntu source package by its Debian source name.
