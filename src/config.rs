@@ -45,14 +45,11 @@ pub fn has_debcargo_config(package_root: &Path) -> bool {
     get_package_config_path(package_root).is_file()
 }
 
-/// Reads configuration, using an explicit local crate in preference to its saved source path.
-pub fn read_package_config(
-    package_root: &Path,
-    local_crate: Option<&Path>,
-) -> Result<PackageConfig> {
-    let path = get_package_config_path(package_root);
-    let contents = fs::read_to_string(&path).with_context(|| format!("read {}", path.display()))?;
-    parse_package_config(&contents, &package_root.join("debian"), local_crate)
+/// Reads a configuration file, using an explicit local crate in preference to its saved source path.
+pub fn read_package_config(path: &Path, local_crate: Option<&Path>) -> Result<PackageConfig> {
+    let contents = fs::read_to_string(path).with_context(|| format!("read {}", path.display()))?;
+    let directory = path.parent().context("configuration path has no parent")?;
+    parse_package_config(&contents, directory, local_crate)
         .with_context(|| format!("read configuration {}", path.display()))
 }
 

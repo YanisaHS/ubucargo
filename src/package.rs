@@ -13,8 +13,8 @@ use debian_control::lossless::control::Control;
 use crate::{
     changelog::read_top_changelog,
     config::{
-        PackageConfig, get_new_local_package_config, get_new_package_config, read_package_config,
-        relocate_package_config,
+        PackageConfig, get_new_local_package_config, get_new_package_config,
+        get_package_config_path, read_package_config, relocate_package_config,
     },
     generate::{GeneratedPackage, generate_package},
     input::Input,
@@ -55,6 +55,10 @@ pub struct PackageArgs {
     /// Destination directory; package inputs default to their existing directory.
     #[arg(long = "package-dir", value_name = "DIR")]
     pub package_dir: Option<PathBuf>,
+
+    /// Initial debcargo.toml for a new package.
+    #[arg(long, value_name = "PATH")]
+    pub config: Option<PathBuf>,
 
     /// Resolve source-tree conflicts in favor of the selected crate release.
     #[arg(long)]
@@ -99,6 +103,9 @@ pub fn run(args: PackageArgs) -> Result<()> {
         }
         Input::Package(_) | Input::Archive { .. } | Input::Ppa { .. } => Some(input.clone()),
     };
+    if args.config.is_some() && maintained_input.is_some() {
+        bail!("--config applies only to new packages; edit the package's debian/debcargo.toml");
+    }
     let source_version = match &input {
         Input::Archive { .. } | Input::Ppa { .. } => args.version.as_deref(),
         _ => None,
@@ -118,8 +125,12 @@ pub fn run(args: PackageArgs) -> Result<()> {
     };
     let (mut config, existing) = if let Some(package) = &acquired {
         let existing = read_existing_package(&package.root)?;
-        let config = read_package_config(&package.root, local)?;
+        let config = read_package_config(&get_package_config_path(&package.root), local)?;
         (config, Some(existing))
+    } else if let Some(path) = &args.config {
+        let mut config = read_package_config(&current.join(path), local)?;
+        relocate_package_config(&mut config, &destination)?;
+        (config, None)
     } else if let Some(local) = local {
         (
             get_new_local_package_config(local, Some(&destination))?,

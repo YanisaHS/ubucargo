@@ -165,9 +165,22 @@ receives a regenerated copy and must be new.
 Published inputs require a new destination, defaulting to
 .BI ./ SOURCE .
 Crates.io inputs default to the nearest parent source package, or to the
-generated Debian source name in the working directory.
+unsuffixed Debian source name in the working directory.
 For crates.io and local Cargo inputs, an existing destination supplies
 configuration and maintainer changes for the same crate.
+.TP
+.BI \-\-config " PATH"
+Use the supplied debcargo configuration to create a new package from crates.io
+or a local Cargo input, and save it as
+.BR debian/debcargo.toml .
+The configuration path is relative to the working directory.
+Relative local source paths are resolved against the supplied configuration's
+directory and rebased for the destination.
+An explicit
+.B local:
+input supplies the local source path in preference to the configured value.
+Existing packages and published source inputs use their own
+.BR debian/debcargo.toml .
 .TP
 .B \-\-force
 Resolve source-tree conflicts by adopting the selected upstream state for

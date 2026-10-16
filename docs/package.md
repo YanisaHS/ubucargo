@@ -4,7 +4,7 @@
 
 ```console
 ubucargo package [<INPUT> [<VERSION>]] [--package-dir <DIR>] \
-  [--force] \
+  [--config <PATH>] [--force] \
   [--keep-staging] [--keep <PATH>]... [--replace <PATH>]...
 ```
 
@@ -53,15 +53,33 @@ An explicit or implicit package input is updated in place by default. With `--pa
 
 Published source inputs (Ubuntu Archive, Debian archive, and PPA) require a new destination, defaulting to `./<SOURCE>` in the current directory. Use `--package-dir` to select another new directory.
 
-Without `--package-dir`, a crates.io input uses the nearest parent package containing `debian/control` and `debian/changelog` as its destination; if none is found, the destination defaults to the generated Debian source name in the current directory.
+Without `--package-dir`, a crates.io input uses the nearest parent package containing `debian/control` and `debian/changelog` as its destination; if none is found, the destination defaults to the unsuffixed Debian source name in the current directory.
 
-For crates.io and local crate inputs, an existing destination supplies configuration, patches, maintainer overrides, and generated-file ownership state. A nonexistent destination creates a package with default configuration, even when the current directory is inside another package. An existing destination must be a valid source package for the same Cargo crate. To switch from local source to a registry release, remove `crate_src_path` from the destination's configuration.
+For crates.io and local crate inputs, an existing destination supplies configuration, patches, maintainer overrides, and generated-file ownership state. A nonexistent destination creates a package with the supplied `--config` or default configuration, even when the current directory is inside another package. An existing destination must be a valid source package for the same Cargo crate. To switch from local source to a registry release, remove `crate_src_path` from the destination's configuration.
 
 `local:<PATH>` requires an explicit `--package-dir`. The resolved crate and package directories must be separate, non-nested directory trees. For an existing package, its other configuration, patches, and maintainer files are retained. The explicit local path replaces any saved `crate_src_path`, including one that no longer exists, and is written relative to `debian/debcargo.toml`. This configuration change is included in the update plan and written after validation succeeds. Later `package` runs resolve that setting automatically.
 
 Orig tarballs remain beside the destination directory. An existing orig tarball with different contents causes an error before writing to the destination.
 
 Output identifies the operation as `Create new package: <DIR>`, `Update existing package: <DIR>`, or `Create package from existing packaging: <DIR>`. The last form describes a package copy or a published input that carries maintained packaging into a new destination.
+
+## Initial configuration
+
+`--config <PATH>` supplies the initial debcargo configuration for a new package from crates.io or a local Cargo input. The file is used during generation and saved as `debian/debcargo.toml`. For example, save the following configuration as `bevy.toml` to enable prerelease dependency conversion:
+
+```toml
+allow_prerelease_deps = true
+```
+
+Then create the package using that file:
+
+```console
+ubucargo package bevy --config ./bevy.toml
+```
+
+The configuration path resolves against the working directory. Relative `crate_src_path` values resolve against the supplied configuration's directory and are rebased for the destination's `debian` directory. An explicit `local:<PATH>` input supplies the local crate path in preference to the configuration's value.
+
+Existing packages and published source inputs use their own `debian/debcargo.toml`; edit that file to change their configuration.
 
 ## Regeneration requirements
 
@@ -116,13 +134,13 @@ Ubucargo invokes debcargo's `package` command for the selected exact release. De
 
 When creating a package, ubucargo writes the generated source tree and Debian packaging to the destination directory, adds `debian/debcargo.toml`, and records generated-file fingerprints in `debian/ubucargo-state.json`. Primary files that match the generated output have no corresponding `.debcargo.hint` files.
 
-For both crates.io and local crates, the initial configuration includes:
+By default, the initial configuration for both crates.io and local crates includes:
 
 ```toml
 maintainer = "Ubuntu Developers <ubuntu-devel-discuss@lists.ubuntu.com>"
 ```
 
-This setting gives debcargo the same maintainer for the first generation and subsequent runs, including the generated `debian/*` copyright attribution. Existing configurations are retained; copying a package rebases any relative local-crate path, and an explicit `local:` input updates that setting.
+This setting gives debcargo the same maintainer for the first generation and subsequent runs, including the generated `debian/*` copyright attribution. A supplied `--config` provides the initial maintainer settings. Existing configurations are retained; copying a package rebases any relative local-crate path, and an explicit `local:` input updates that setting.
 
 When updating an existing package, ubucargo preserves durable maintainer-owned state:
 
@@ -162,7 +180,7 @@ Ubucargo prepares the staged changelog before final generation and always passes
 
 ### Control generation
 
-After every package generation, ubucargo adjusts the generated `debian/control` for Ubuntu. It runs `update-maintainer` on the staged package, preserving current Ubuntu maintainer addresses or setting Ubuntu Developers and recording the previous maintainer in `XSBC-Original-Maintainer`. Debian-derived packages retain their existing configuration while receiving this control adjustment. Packages created directly by ubucargo already use Ubuntu Developers.
+After every package generation, ubucargo adjusts the generated `debian/control` for Ubuntu. It runs `update-maintainer` on the staged package, preserving current Ubuntu maintainer addresses or setting Ubuntu Developers and recording the previous maintainer in `XSBC-Original-Maintainer`. Debian-derived packages retain their existing configuration while receiving this control adjustment. Packages created with the default configuration already use Ubuntu Developers.
 
 Ubucargo also removes debcargo's Debian-specific `Vcs-Git` and `Vcs-Browser` fields from generated control files. These adjustments follow the normal generated-file update rules, preserving maintainer overrides. Ownership inference for existing raw debcargo control files is described under [migration and ambiguous baselines](#migration-and-ambiguous-baselines).
 
