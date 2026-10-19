@@ -218,6 +218,7 @@ fn matches_architectures<'a>(
 /// Matches one Debian architecture against an architecture restriction.
 fn matches_architecture(architecture: &str, restriction: &str) -> Result<bool> {
     let status = Command::new("dpkg-architecture")
+        .arg("--force")
         .arg(format!("-a{architecture}"))
         .arg(format!("-i{restriction}"))
         .status()
