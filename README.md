@@ -56,7 +56,7 @@ These commands share a common syntax for specifying an input crate, including cr
 
 ```console
 ubucargo package [<INPUT> [<VERSION>]] [--package-dir <DIR>] \
-  [--config <PATH>] [--force] \
+  [--config <PATH>] [--prepare-only] [--force] \
   [--keep-staging] [--keep <PATH>]... [--replace <PATH>]...
 ```
 
@@ -65,13 +65,15 @@ ubucargo package [<INPUT> [<VERSION>]] [--package-dir <DIR>] \
 - Run `ubucargo package <CRATE> <VERSION>` against an existing package to select another release.
 - Run `ubucargo package local:<PATH> --package-dir <DIR>` to create or update a package from a local crate that is not on crates.io. The two directories must be separate and non-nested.
 - Use `--config <PATH>` to supply the initial `debcargo.toml` when creating a new package.
-- After changing `debcargo.toml`, run `ubucargo package` again.
+- Use `--prepare-only` to prepare the upstream source tree without generating packaging. It is useful when switching to a new upstream version, where full package generation could fail due to the existing quilt patches not applying cleanly.
 - Regenerating a released package creates a new `UNRELEASED` changelog entry; subsequent runs update that entry.
 - `package` exits 0 on success and 2 on errors.
 
 ```sh
 ubucargo package serde
 ```
+
+A fresh `--prepare-only` tree contains upstream source, `debian/debcargo.toml`, the changelog, source format, and any `auto` patches. Run `ubucargo package` inside it after porting patches to generate the remaining packaging and ownership manifest. On existing packages, preparation retains maintained packaging and hints. Since `deps` reads the existing control files, full packaging generation would be needed to bring them up to date.
 
 See [`docs/package.md`](docs/package.md) for full behavior and options.
 

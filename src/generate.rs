@@ -11,15 +11,26 @@ use debian_control::lossless::control::Control;
 use tempfile::TempDir;
 
 use crate::{
-    cargo::read_root_package,
+    cargo::read_package_identity,
     changelog::prepare_changelog,
     config::{get_staged_config_path, write_staged_config},
     resolve::{CrateSelection, ResolvedPackage, normalize_crate_name},
     util::{copy_tree, run_command},
 };
 
+/// Selects full packaging or preparation for maintainer patch porting.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum GenerationMode {
+    /// Generate and reconcile the complete Debian packaging.
+    Full,
+    /// Prepare source and automatic patches without applying maintainer patches.
+    Prepare,
+}
+
 /// Validated files and identities produced by final debcargo generation.
 pub struct GeneratedPackage {
+    /// Requested packaging workflow.
+    pub mode: GenerationMode,
     /// Temporary directory containing all staged generation state.
     pub stage: TempDir,
     /// Staged source package tree.
@@ -29,7 +40,11 @@ pub struct GeneratedPackage {
 }
 
 /// Generates and validates a staged source package using the resolved release and configuration.
-pub fn generate_package(package: &ResolvedPackage, keep_staging: bool) -> Result<GeneratedPackage> {
+pub fn generate_package(
+    package: &ResolvedPackage,
+    keep_staging: bool,
+    mode: GenerationMode,
+) -> Result<GeneratedPackage> {
     let stage = tempfile::Builder::new()
         .disable_cleanup(keep_staging)
         .tempdir()
@@ -39,14 +54,16 @@ pub fn generate_package(package: &ResolvedPackage, keep_staging: bool) -> Result
     }
     let overlay = stage.path().join("overlay");
     fs::create_dir(&overlay)?;
-    if let Some(existing) = &package.existing {
+    if mode == GenerationMode::Full
+        && let Some(existing) = &package.existing
+    {
         let patches = existing.root.join("debian/patches");
         if patches.is_dir() {
             copy_tree(&patches, &overlay.join("patches"))?;
         }
     }
     write_staged_config(&package.config, stage.path())?;
-    prepare_changelog(package, &overlay.join("changelog"))?;
+    prepare_changelog(package, &overlay.join("changelog"), mode)?;
     run_debcargo(stage.path(), &package.crate_selection)?;
     validate_debcargo_output(
         stage,
@@ -54,6 +71,7 @@ pub fn generate_package(package: &ResolvedPackage, keep_staging: bool) -> Result
         &package.upstream,
         &package.crate_selection.crate_name,
         &package.crate_selection.version,
+        mode,
     )
 }
 
@@ -85,6 +103,7 @@ fn validate_debcargo_output(
     expected_upstream: &str,
     requested_name: &str,
     requested_version: &str,
+    mode: GenerationMode,
 ) -> Result<GeneratedPackage> {
     let source = stage.path().join("output");
     for path in [
@@ -99,7 +118,7 @@ fn validate_debcargo_output(
         }
     }
 
-    let package = read_root_package(&source)?;
+    let package = read_package_identity(&source)?;
     if normalize_crate_name(requested_name) != normalize_crate_name(&package.name) {
         bail!(
             "debcargo selected crate {} instead of {requested_name}",
@@ -137,6 +156,7 @@ fn validate_debcargo_output(
         bail!("debcargo produced no {}", orig.display());
     }
     Ok(GeneratedPackage {
+        mode,
         stage,
         source,
         orig,

@@ -11,6 +11,7 @@ use anyhow::{Context, Result, bail};
 
 use crate::{
     config::{PackageConfig, write_package_config},
+    source::tree::{TreeNode, TreePlan, build_tree_plan, scan_tree},
     util::run_command,
 };
 use debian_control::lossless::control::Control;
@@ -130,6 +131,56 @@ pub fn build_patch_series_plan(debian: &Path, stage: &Path) -> Result<PathPlan> 
         overridden: false,
         unresolved: false,
     })
+}
+
+/// Plans replacement of automatic patches while retaining the maintained series text.
+pub fn build_prepared_patch_plan(debian: &Path, generated: &Path) -> Result<TreePlan> {
+    let series_path = Path::new("patches/series");
+    let mut series = fs::read_to_string(generated.join(series_path)).or_else(|error| {
+        if error.kind() == std::io::ErrorKind::NotFound {
+            Ok(String::new())
+        } else {
+            Err(error)
+        }
+    })?;
+    if let Some(old) = read_state(&debian.join(series_path))? {
+        for line in std::str::from_utf8(&old.contents)?.split_inclusive('\n') {
+            let patch = line.split_whitespace().next().unwrap_or("");
+            if !patch.starts_with("auto/") {
+                series.push_str(line);
+            }
+        }
+    }
+    if !series.is_empty() {
+        fs::create_dir_all(generated.join("patches"))?;
+        fs::write(generated.join(series_path), series)?;
+    }
+    let old = scan_tree(debian, None)?;
+    let mut new = old.clone();
+    new.retain(|path, _| !path.starts_with("patches/auto") && path != series_path);
+    for (path, state) in scan_tree(generated, None)? {
+        if path.starts_with("patches/auto") || path == series_path {
+            new.insert(path, state);
+            new.entry(PathBuf::from("patches"))
+                .or_insert(TreeNode::Directory);
+        }
+    }
+    Ok(build_tree_plan(&old, &new))
+}
+
+/// Keeps the initial files needed to port patches and subsequently generate packaging.
+pub fn initialize_prepared_package(source: &Path, config: &PackageConfig) -> Result<()> {
+    let debian = source.join("debian");
+    let old = scan_tree(&debian, None)?;
+    let mut new = old.clone();
+    new.retain(|path, _| {
+        matches!(
+            path.to_str(),
+            Some("changelog" | "source" | "source/format" | "patches" | "patches/series")
+        ) || path.starts_with("patches/auto")
+    });
+    build_tree_plan(&old, &new).apply(&debian)?;
+    write_package_config(config, source)
 }
 
 /// Adds the used Ubucargo configuration and generated-file baselines to a new staged package.

@@ -11,7 +11,7 @@ use anyhow::{Context, Result, bail};
 use semver::{Version, VersionReq};
 
 use crate::{
-    cargo::read_root_package,
+    cargo::{read_package_identity, read_root_package},
     changelog::{TopChangelog, read_top_changelog, validate_top_changelog},
     config::{
         PackageConfig, get_package_config_path, get_staged_config_path, has_debcargo_config,
@@ -79,7 +79,7 @@ pub fn read_existing_package(root: &Path) -> Result<ExistingPackage> {
             root.display()
         );
     }
-    let current = read_root_package(root)?;
+    let current = read_package_identity(root)?;
     let version = parse_exact_version(&current.version)?;
     let upstream = cargo_to_debian_upstream_version(&version, None);
     let top_changelog = read_top_changelog(&root.join("debian/changelog"))?;
@@ -262,7 +262,7 @@ fn resolve_latest(crate_name: &str, config: &PackageConfig) -> Result<CrateSelec
             .current_dir(stage.path()),
         "debcargo extract",
     )?;
-    let package = read_root_package(&stage.path().join("output"))?;
+    let package = read_package_identity(&stage.path().join("output"))?;
     if normalize_crate_name(crate_name) != normalize_crate_name(&package.name) {
         bail!(
             "debcargo selected crate {} instead of {crate_name}",

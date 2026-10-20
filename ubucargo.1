@@ -1,4 +1,4 @@
-.TH UBUCARGO 1 "2026-10-16" "ubucargo" "User Commands"
+.TH UBUCARGO 1 "2026-10-20" "ubucargo" "User Commands"
 .SH NAME
 ubucargo \- create and maintain Ubuntu packages for Rust crates
 .SH SYNOPSIS
@@ -45,7 +45,11 @@ additions are retained when compatible with the new upstream.
 Source conflicts require maintainer resolution or
 .BR \-\-force .
 Updates are staged and validated before writing to the destination.
-Applied quilt patches are restored to their original position in staging.
+Full generation restores applied quilt patches to their original position in staging.
+Use
+.B \-\-prepare-only
+to prepare the source and automatic patches for maintainer patch porting,
+leaving all patches unapplied.
 .PP
 Regenerating a released package creates a new
 .B UNRELEASED
@@ -57,7 +61,7 @@ autopkgtests.
 For local and published source packages, this inspection is based on the existing control files;
 for crates.io and local Cargo inputs, it is based on temporary packaging generated with default
 configuration.
-This command does not modify existing packages.
+This command leaves existing package files unchanged.
 .PP
 Each dependency is checked independently for compatible package names,
 Debian version constraints, and features.
@@ -128,8 +132,6 @@ version in the selected Ubuntu series.
 .TP
 .BI pkg: PATH
 Select an existing source package containing
-.B debian/control
-and
 .BR debian/changelog .
 An input of
 .BR . ,
@@ -155,8 +157,6 @@ directory trees.
 Omitting
 .I INPUT
 selects the nearest directory at or above the working directory containing
-.B debian/control
-and
 .BR debian/changelog .
 .SH PACKAGE OPTIONS
 .TP
@@ -183,6 +183,14 @@ An explicit
 input supplies the local source path in preference to the configured value.
 Existing packages and published source inputs use their own
 .BR debian/debcargo.toml .
+.TP
+.B \-\-prepare-only
+Prepare upstream source, the orig tarball, changelog, and fresh automatic patches
+for maintainer patch porting, without regenerating packaging.
+A fresh crate input receives minimal packaging: configuration, changelog,
+source format, and any automatic patches and their series.
+Existing inputs retain their maintained packaging, hints, and ownership manifest;
+automatic patches and their series entries are replaced with the fresh set.
 .TP
 .B \-\-force
 Resolve source-tree conflicts by adopting the selected upstream state for
@@ -295,7 +303,7 @@ Each invocation refreshes the selected indexes and reuses unchanged data.
 .SH EXIT STATUS
 .TP
 .B 0
-Successful package generation, or every reported direct Rust dependency has
+Successful package generation or preparation, or every reported direct Rust dependency has
 a compatible candidate.
 Help and version requests also exit successfully.
 .TP
@@ -335,6 +343,17 @@ Create a package from a local Cargo crate:
 .nf
 .RS
 ubucargo package local:../example \-\-package-dir ./rust-example
+.RE
+.fi
+.PP
+Prepare another upstream release for patch porting, then generate packaging:
+.PP
+.nf
+.RS
+ubucargo package serde 1.0.229 \-\-package-dir ./rust-serde \-\-prepare-only
+cd rust-serde
+# Port the maintained patches with quilt.
+ubucargo package
 .RE
 .fi
 .PP

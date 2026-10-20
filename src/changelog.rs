@@ -4,7 +4,7 @@ use std::{fs, path::Path, process::Command};
 
 use anyhow::{Context, Result, bail};
 
-use crate::{resolve::ResolvedPackage, util::run_command};
+use crate::{generate::GenerationMode, resolve::ResolvedPackage, util::run_command};
 use debian_changelog::ChangeLog;
 
 /// Parsed fields from the first Debian changelog entry.
@@ -49,7 +49,11 @@ pub fn validate_top_changelog(
 }
 
 /// Prepares the resolved package's changelog with `dch`, then normalizes its top entry.
-pub fn prepare_changelog(package: &ResolvedPackage, staged_path: &Path) -> Result<()> {
+pub fn prepare_changelog(
+    package: &ResolvedPackage,
+    staged_path: &Path,
+    mode: GenerationMode,
+) -> Result<()> {
     if let Some(existing) = &package.existing {
         let old_path = existing.root.join("debian/changelog");
         fs::copy(&old_path, staged_path)
@@ -99,8 +103,12 @@ pub fn prepare_changelog(package: &ResolvedPackage, staged_path: &Path) -> Resul
     } else {
         "crates.io"
     };
+    let action = match mode {
+        GenerationMode::Full => "Package",
+        GenerationMode::Prepare => "Prepare",
+    };
     let provenance = format!(
-        "Package {} {} from {source_kind}.\n  Generated with debcargo {} and ubucargo {}.",
+        "{action} {} {} from {source_kind}.\n  Generated with debcargo {} and ubucargo {}.",
         package.crate_selection.crate_name,
         package.crate_selection.version,
         package.debcargo_version,
@@ -197,7 +205,7 @@ fn is_provenance(lines: Vec<String>) -> bool {
     let Some(first) = lines.first() else {
         return false;
     };
-    first.starts_with("* Package ")
+    (first.starts_with("* Package ") || first.starts_with("* Prepare "))
         && lines
             .iter()
             .any(|line| line.contains("from crates.io") || line.contains("from local source"))

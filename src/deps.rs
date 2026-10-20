@@ -153,6 +153,14 @@ pub fn run(args: DepArgs) -> Result<bool> {
         )
     };
     validate_version(&input, args.version.as_deref())?;
+    if let Input::Package(root) = &input
+        && !root.join("debian/control").is_file()
+    {
+        bail!(
+            "{} is missing debian/control; run `ubucargo package` to generate dependency metadata",
+            root.display()
+        );
+    }
     let suite = if let Some(suite) = args.suite {
         suite
     } else if let Some(suite) = read_input_suite(&input) {
@@ -224,7 +232,11 @@ pub fn run(args: DepArgs) -> Result<bool> {
                 "Input: {} {} from {location} (generated packaging)",
                 resolved.crate_selection.crate_name, resolved.crate_selection.version
             );
-            let generated = generate::generate_package(&resolved, args.keep_staging)?;
+            let generated = generate::generate_package(
+                &resolved,
+                args.keep_staging,
+                generate::GenerationMode::Full,
+            )?;
             (
                 control::read_dependency_sections(&generated.source, &architecture)?,
                 header,

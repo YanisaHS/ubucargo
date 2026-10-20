@@ -15,8 +15,9 @@ use crate::{
     config::{
         PackageConfig, get_new_local_package_config, get_new_package_config,
         get_package_config_path, read_package_config, relocate_package_config,
+        write_package_config,
     },
-    generate::{GeneratedPackage, generate_package},
+    generate::{GeneratedPackage, GenerationMode, generate_package},
     input::Input,
     resolve::{
         CrateRequest, ResolvedPackage, find_parent_package, get_crate_source_name,
@@ -33,8 +34,9 @@ use crate::{
 use self::{
     managed::{FileState, ManagedPlan, build_plan, read_state, write_state},
     output::{
-        build_patch_series_plan, collect_managed_paths, initialize_package,
-        prepare_generated_candidates, remove_generated_vcs_fields, update_staged_maintainer,
+        build_patch_series_plan, build_prepared_patch_plan, collect_managed_paths,
+        initialize_package, initialize_prepared_package, prepare_generated_candidates,
+        remove_generated_vcs_fields, update_staged_maintainer,
     },
 };
 
@@ -60,6 +62,10 @@ pub struct PackageArgs {
     #[arg(long, value_name = "PATH")]
     pub config: Option<PathBuf>,
 
+    /// Prepare source and automatic patches for maintainer patch porting.
+    #[arg(long, conflicts_with_all = ["keep", "replace"])]
+    pub prepare_only: bool,
+
     /// Resolve source-tree conflicts in favor of the selected crate release.
     #[arg(long)]
     pub force: bool,
@@ -83,6 +89,11 @@ pub fn run(args: PackageArgs) -> Result<()> {
         .context("get current directory")?
         .canonicalize()
         .context("resolve current directory")?;
+    let mode = if args.prepare_only {
+        GenerationMode::Prepare
+    } else {
+        GenerationMode::Full
+    };
     let (keep_paths, replace_paths) = collect_decisions(&args.keep, &args.replace)?;
     let input = if let Some(value) = &args.input {
         crate::input::parse_input(value, &current)?
@@ -125,7 +136,14 @@ pub fn run(args: PackageArgs) -> Result<()> {
     };
     let (mut config, existing) = if let Some(package) = &acquired {
         let existing = read_existing_package(&package.root)?;
-        let config = read_package_config(&get_package_config_path(&package.root), local)?;
+        let config = read_package_config(&get_package_config_path(&package.root), None)?;
+        if let Some(local) = local
+            && config.resolved_crate_src_path.as_deref() != Some(local)
+        {
+            bail!(
+                "local input disagrees with crate_src_path; edit the package's debian/debcargo.toml to select this local source"
+            );
+        }
         (config, Some(existing))
     } else if let Some(path) = &args.config {
         let mut config = read_package_config(&current.join(path), local)?;
@@ -175,6 +193,9 @@ pub fn run(args: PackageArgs) -> Result<()> {
         let existing = resolved.existing.as_mut().unwrap();
         package.stage(args.keep_staging)?;
         existing.root = package.root.clone();
+        if !package.update {
+            write_package_config(&resolved.config, &existing.root)?;
+        }
         top_patch = read_top_patch(&existing.root)?;
         if top_patch.is_some() {
             run_command(
@@ -185,6 +206,9 @@ pub fn run(args: PackageArgs) -> Result<()> {
                 "pop staged quilt patches",
             )?;
         }
+        if mode == GenerationMode::Prepare && existing.root.join(".pc").is_dir() {
+            fs::remove_dir_all(existing.root.join(".pc"))?;
+        }
         let old_orig = acquire_old_orig(&existing.root, &existing.top_changelog)?;
         let base = tempfile::tempdir().context("create old-source extraction directory")?;
         extract_tree(&old_orig, base.path())?;
@@ -192,18 +216,22 @@ pub fn run(args: PackageArgs) -> Result<()> {
     } else {
         None
     };
-    let generated = generate_package(&resolved, args.keep_staging)?;
+    let generated = generate_package(&resolved, args.keep_staging, mode)?;
     // Capture debcargo's raw control before Ubuntu adjustments so a
     // matching imported control can establish ownership during migration.
-    let raw_control = read_state(&generated.source.join("debian/control"))?;
-    remove_generated_vcs_fields(generated.stage.path())?;
-    update_staged_maintainer(generated.stage.path())?;
+    let raw_control = if mode == GenerationMode::Full {
+        let control = read_state(&generated.source.join("debian/control"))?;
+        remove_generated_vcs_fields(generated.stage.path())?;
+        update_staged_maintainer(generated.stage.path())?;
+        control
+    } else {
+        None
+    };
 
-    // Reconcile unpatched source and packaging in staging, then restore the
-    // original quilt position there. This validates patch reapplication and
-    // rebuilds .pc against the updated upstream before touching the destination.
-    // The final write compares the completed, patched tree with the destination
-    // so unchanged files retain their modification times.
+    // Reconcile source and the selected packaging in staging. Full generation
+    // also restores the original quilt position against the updated upstream.
+    // Compare the completed tree with the destination so unchanged files retain
+    // their modification times.
     if let (Some(_), Some(base)) = (&resolved.existing, &baseline) {
         let plan = build_update_plan(
             &resolved,
@@ -214,15 +242,14 @@ pub fn run(args: PackageArgs) -> Result<()> {
             &keep_paths,
             &replace_paths,
         )?;
-        plan.managed.print_overrides();
-        if plan.has_changes() {
-            plan.apply()?;
-        }
+        plan.apply()?;
     } else {
         create_new(&destination, &resolved.config, &generated)?;
     }
     if let Some(package) = &acquired {
-        if let Some(top) = top_patch {
+        if mode == GenerationMode::Full
+            && let Some(top) = top_patch
+        {
             run_command(
                 Command::new("quilt")
                     .args(["push", "--quiltrc=-", "--"])
@@ -236,6 +263,12 @@ pub fn run(args: PackageArgs) -> Result<()> {
             }
         }
         write_package(package)?;
+    }
+    if mode == GenerationMode::Prepare {
+        println!(
+            "Prepared {} with all quilt patches unapplied. Port maintainer patches, then run `ubucargo package` in that directory.",
+            destination.display()
+        );
     }
     Ok(())
 }
@@ -318,68 +351,78 @@ fn build_update_plan(
     let new_tree = scan_tree(&generated.source, exclude)?;
     let source_plan = build_source_plan(&base_tree, &old_tree, &new_tree, force)?;
 
-    let generated_candidates = prepare_generated_candidates(&generated.source)?;
-    let managed = collect_managed_paths(&debian, &generated_candidates)?;
-    let control = PathBuf::from("debian/control");
-    let mut inferred_bases = BTreeMap::new();
-    if let Some(mut raw_control) = raw_control {
-        // Compare against the imported policy version so generator version drift
-        // alone can establish ownership. The actual generated output stays intact.
-        if let Ok(existing_control) = Control::from_file(debian.join("control"))
-            && let Some(version) = existing_control
-                .source()
-                .and_then(|source| source.standards_version())
-        {
-            let candidate: Control = std::str::from_utf8(&raw_control.contents)?
-                .parse()
-                .context("parse raw generated debian/control")?;
-            candidate
-                .source()
-                .context("raw generated control has no source paragraph")?
-                .set_standards_version(&version);
-            raw_control.contents = candidate.to_string().into_bytes();
+    let packaging = if generated.mode == GenerationMode::Prepare {
+        PackagingPlan::Prepared(build_prepared_patch_plan(
+            &debian,
+            &generated.source.join("debian"),
+        )?)
+    } else {
+        let generated_candidates = prepare_generated_candidates(&generated.source)?;
+        let managed = collect_managed_paths(&debian, &generated_candidates)?;
+        let control = PathBuf::from("debian/control");
+        let mut inferred_bases = BTreeMap::new();
+        if let Some(mut raw_control) = raw_control {
+            // Compare against the imported policy version so generator version drift
+            // alone can establish ownership. The actual generated output stays intact.
+            if let Ok(existing_control) = Control::from_file(debian.join("control"))
+                && let Some(version) = existing_control
+                    .source()
+                    .and_then(|source| source.standards_version())
+            {
+                let candidate: Control = std::str::from_utf8(&raw_control.contents)?
+                    .parse()
+                    .context("parse raw generated debian/control")?;
+                candidate
+                    .source()
+                    .context("raw generated control has no source paragraph")?
+                    .set_standards_version(&version);
+                raw_control.contents = candidate.to_string().into_bytes();
+            }
+            inferred_bases.insert(control, raw_control);
         }
-        inferred_bases.insert(control, raw_control);
-    }
-    let mut generated_plan = build_plan(
-        &debian,
-        &managed,
-        &generated_candidates,
-        &inferred_bases,
-        keep,
-        replace,
-    )?;
-    generated_plan
-        .paths
-        .push(build_patch_series_plan(&debian, generated.stage.path())?);
-    let ambiguities = generated_plan.collect_ambiguities();
-    if !ambiguities.is_empty() {
-        for path in ambiguities {
-            println!("Ambiguous {} (use --keep or --replace)", path.display());
+        let mut generated_plan = build_plan(
+            &debian,
+            &managed,
+            &generated_candidates,
+            &inferred_bases,
+            keep,
+            replace,
+        )?;
+        generated_plan
+            .paths
+            .push(build_patch_series_plan(&debian, generated.stage.path())?);
+        let ambiguities = generated_plan.collect_ambiguities();
+        if !ambiguities.is_empty() {
+            for path in ambiguities {
+                println!("Ambiguous {} (use --keep or --replace)", path.display());
+            }
+            bail!("unresolved generated-file ambiguities");
         }
-        bail!("unresolved generated-file ambiguities");
-    }
 
-    // Preserve control overrides, but flag identities that will prevent a build.
-    let prepared_top = read_top_changelog(&generated.stage.path().join("overlay/changelog"))?;
-    for path in &generated_plan.paths {
-        if path.path == Path::new("debian/control") {
-            let state = path
-                .primary_after
-                .as_ref()
-                .context("planned debian/control is missing")?;
-            let control: Control = std::str::from_utf8(&state.contents)?
-                .parse()
-                .context("parse planned debian/control")?;
-            let source = control.source().and_then(|source| source.name());
-            if source.as_deref() != Some(prepared_top.source.as_str()) {
-                eprintln!(
-                    "warning: debian/control Source does not match {}; the package will not build until updated to match debian/control.debcargo.hint",
-                    prepared_top.source
-                );
+        // Preserve control overrides, but flag identities that will prevent a build.
+        let prepared_top = read_top_changelog(&generated.stage.path().join("overlay/changelog"))?;
+        for path in &generated_plan.paths {
+            if path.path == Path::new("debian/control") {
+                let state = path
+                    .primary_after
+                    .as_ref()
+                    .context("planned debian/control is missing")?;
+                let control: Control = std::str::from_utf8(&state.contents)?
+                    .parse()
+                    .context("parse planned debian/control")?;
+                let source = control.source().and_then(|source| source.name());
+                if source.as_deref() != Some(prepared_top.source.as_str()) {
+                    eprintln!(
+                        "warning: debian/control Source does not match {}; the package will not build until updated to match debian/control.debcargo.hint",
+                        prepared_top.source
+                    );
+                }
             }
         }
-    }
+
+        generated_plan.print_overrides();
+        PackagingPlan::Generated(generated_plan)
+    };
 
     let prepared_changelog = read_state(&generated.stage.path().join("overlay/changelog"))?
         .context("staged changelog is missing")?;
@@ -390,10 +433,6 @@ fn build_update_plan(
             .file_name()
             .context("candidate orig has no file name")?,
     );
-    let old_config =
-        read_state(&debian.join("debcargo.toml"))?.context("package configuration is missing")?;
-    let mut new_config = old_config.clone();
-    new_config.contents = resolved.config.original_contents.as_bytes().to_vec();
     Ok(UpdatePlan {
         root: root.clone(),
         orig: if files_differ(&generated.orig, &orig_destination)? {
@@ -402,12 +441,7 @@ fn build_update_plan(
             None
         },
         source: source_plan,
-        managed: generated_plan,
-        config: if new_config != old_config {
-            Some(new_config)
-        } else {
-            None
-        },
+        packaging,
         changelog: if old_changelog.as_ref() != Some(&prepared_changelog) {
             Some(prepared_changelog)
         } else {
@@ -416,30 +450,27 @@ fn build_update_plan(
     })
 }
 
+/// Packaging changes selected for full generation or patch preparation.
+enum PackagingPlan {
+    /// Generated packaging together with ownership baselines and hints.
+    Generated(ManagedPlan),
+    /// Automatic patches and their entries in the maintained series.
+    Prepared(TreePlan),
+}
+
 /// Complete changes to an existing package; staged source files must remain until applied.
 struct UpdatePlan {
     root: PathBuf,
     /// Staged orig and destination paths, or None when the tarball already matches.
     orig: Option<(PathBuf, PathBuf)>,
     source: TreePlan,
-    managed: ManagedPlan,
+    packaging: PackagingPlan,
     /// Updated changelog, or None when the current changelog already matches.
     changelog: Option<FileState>,
-    /// Updated configuration, including an explicitly selected local source path.
-    config: Option<FileState>,
 }
 
 impl UpdatePlan {
-    /// Reports whether any part of the package needs updating.
-    fn has_changes(&self) -> bool {
-        self.orig.is_some()
-            || self.source.has_changes()
-            || self.managed.has_changes()
-            || self.changelog.is_some()
-            || self.config.is_some()
-    }
-
-    /// Writes the orig, source, managed files, changelog, and configuration.
+    /// Writes the orig, source, selected packaging, and changelog.
     fn apply(&self) -> Result<()> {
         if let Some((source, destination)) = &self.orig {
             fs::copy(source, destination)
@@ -448,16 +479,16 @@ impl UpdatePlan {
         self.source
             .apply(&self.root)
             .context("package may be partially updated; rerun `ubucargo package`")?;
-        if self.managed.has_changes() {
-            self.managed
-                .apply()
-                .context("package may be partially updated; rerun `ubucargo package`")?;
+        match &self.packaging {
+            PackagingPlan::Generated(plan) => {
+                if plan.has_changes() {
+                    plan.apply()?;
+                }
+            }
+            PackagingPlan::Prepared(plan) => plan.apply(&self.root.join("debian"))?,
         }
         if let Some(changelog) = &self.changelog {
             write_state(&self.root.join("debian/changelog"), Some(changelog))?;
-        }
-        if let Some(config) = &self.config {
-            write_state(&self.root.join("debian/debcargo.toml"), Some(config))?;
         }
         Ok(())
     }
@@ -466,7 +497,10 @@ impl UpdatePlan {
 /// Initializes and writes the generated package at the resolved destination.
 fn create_new(root: &Path, config: &PackageConfig, generated: &GeneratedPackage) -> Result<()> {
     let parent = root.parent().context("package root has no parent")?;
-    initialize_package(&generated.source, config)?;
+    match generated.mode {
+        GenerationMode::Full => initialize_package(&generated.source, config)?,
+        GenerationMode::Prepare => initialize_prepared_package(&generated.source, config)?,
+    }
 
     require_absent(root)?;
     let orig = parent.join(

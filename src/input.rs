@@ -76,9 +76,9 @@ pub enum Input {
     Local(PathBuf),
 }
 
-/// Reports whether a directory contains the files identifying a Debian source package.
+/// Reports whether a directory contains the changelog identifying a Debian source package.
 pub fn has_package_files(package_root: &Path) -> bool {
-    package_root.join("debian/control").is_file() && package_root.join("debian/changelog").is_file()
+    package_root.join("debian/changelog").is_file()
 }
 
 /// Parses explicit inputs and predictable automatic spellings against the working directory.
@@ -114,7 +114,7 @@ pub fn parse_input(value: &str, current: &Path) -> Result<Input> {
                     .context("resolve package input")?;
                 if !has_package_files(&path) {
                     bail!(
-                        "{} requires debian/control and debian/changelog to select a package",
+                        "{} requires debian/changelog to select a package",
                         path.display()
                     );
                 }
@@ -147,7 +147,7 @@ pub fn parse_input(value: &str, current: &Path) -> Result<Input> {
             return Ok(Input::Package(path));
         }
         bail!(
-            "{} requires debian/control and debian/changelog to select a package; use local:{value} to select a local Cargo crate",
+            "{} requires debian/changelog to select a package; use local:{value} to select a local Cargo crate",
             path.display()
         );
     }
