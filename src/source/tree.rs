@@ -42,18 +42,6 @@ impl TreePlan {
         !self.paths.is_empty()
     }
 
-    /// Prints source-tree changes in deterministic path order.
-    pub fn print_report(&self) {
-        for (path, (old, new)) in &self.paths {
-            let verb = match (old, new) {
-                (None, Some(_)) => "Create",
-                (Some(_), None) => "Remove",
-                _ => "Update",
-            };
-            println!("{verb} {}", path.display());
-        }
-    }
-
     /// Removes old entries, atomically writes regular files, and creates directories and links.
     pub fn apply(&self, root: &Path) -> Result<()> {
         // Reverse path order removes descendants before their parents.

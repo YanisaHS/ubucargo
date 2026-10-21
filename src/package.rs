@@ -232,6 +232,7 @@ pub fn run(args: PackageArgs) -> Result<()> {
     // also restores the original quilt position against the updated upstream.
     // Compare the completed tree with the destination so unchanged files retain
     // their modification times.
+    let mut overrides = Vec::new();
     if let (Some(_), Some(base)) = (&resolved.existing, &baseline) {
         let plan = build_update_plan(
             &resolved,
@@ -242,6 +243,13 @@ pub fn run(args: PackageArgs) -> Result<()> {
             &keep_paths,
             &replace_paths,
         )?;
+        if let PackagingPlan::Generated(packaging) = &plan.packaging {
+            for path in &packaging.paths {
+                if path.overridden {
+                    overrides.push(path.path.clone());
+                }
+            }
+        }
         plan.apply()?;
     } else {
         create_new(&destination, &resolved.config, &generated)?;
@@ -262,13 +270,7 @@ pub fn run(args: PackageArgs) -> Result<()> {
                 bail!("could not restore the original top quilt patch {top}");
             }
         }
-        write_package(package)?;
-    }
-    if mode == GenerationMode::Prepare {
-        println!(
-            "Prepared {} with all quilt patches unapplied. Port maintainer patches, then run `ubucargo package` in that directory.",
-            destination.display()
-        );
+        write_package(package, &overrides)?;
     }
     Ok(())
 }
@@ -420,7 +422,6 @@ fn build_update_plan(
             }
         }
 
-        generated_plan.print_overrides();
         PackagingPlan::Generated(generated_plan)
     };
 

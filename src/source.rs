@@ -130,8 +130,8 @@ pub fn acquire_package(
     })
 }
 
-/// Writes a completed staged package, updating existing destinations by their tree differences.
-pub fn write_package(package: &SourcePackage) -> Result<()> {
+/// Reports upstream and packaging changes, then writes the completed staged package.
+pub fn write_package(package: &SourcePackage, overrides: &[PathBuf]) -> Result<()> {
     if !package.update {
         require_absent(&package.destination)?;
     }
@@ -183,10 +183,26 @@ pub fn write_package(package: &SourcePackage) -> Result<()> {
     }
     let final_plan = TreePlan { paths: final_paths };
     if package.update {
-        plan.print_report();
-        final_plan.print_report();
+        if plan.paths.keys().any(|path| !path.starts_with("debian")) {
+            println!("Source tree updated: {}", package.destination.display());
+        }
     } else {
         println!("Create {}", package.destination.display());
+    }
+    for path in overrides {
+        println!("Preserve override {}", path.display());
+    }
+    if package.update {
+        for (path, (old, new)) in plan.paths.iter().chain(&final_plan.paths) {
+            if path.starts_with("debian") {
+                let verb = match (old, new) {
+                    (None, Some(_)) => "Create",
+                    (Some(_), None) => "Remove",
+                    _ => "Update",
+                };
+                println!("{verb} {}", path.display());
+            }
+        }
     }
     for (_, target) in &orig_tarballs {
         println!("Write {}", target.display());

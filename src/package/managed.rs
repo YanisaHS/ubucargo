@@ -178,15 +178,6 @@ impl ManagedPlan {
         ambiguities
     }
 
-    /// Identifies preserved overrides; the final write reports actual file differences.
-    pub fn print_overrides(&self) {
-        for path in &self.paths {
-            if path.overridden {
-                println!("Preserve override {}", path.path.display());
-            }
-        }
-    }
-
     /// Applies primary changes first and writes generated baselines last.
     pub fn apply(&self) -> Result<()> {
         if !self.collect_ambiguities().is_empty() {
