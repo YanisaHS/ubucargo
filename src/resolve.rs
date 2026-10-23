@@ -17,6 +17,7 @@ use crate::{
         PackageConfig, get_package_config_path, get_staged_config_path, has_debcargo_config,
         write_staged_config,
     },
+    debcargo,
     input::has_package_files,
     util::run_command,
 };
@@ -250,7 +251,7 @@ fn resolve_latest(crate_name: &str, config: &PackageConfig) -> Result<CrateSelec
     let stage = tempfile::tempdir().context("create latest-version staging directory")?;
     fs::create_dir(stage.path().join("overlay"))?;
     write_staged_config(config, stage.path())?;
-    run_command(
+    debcargo::run_command(
         Command::new("debcargo")
             .arg("extract")
             .arg("--config")

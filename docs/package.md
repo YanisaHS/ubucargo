@@ -12,6 +12,8 @@ ubucargo package [<INPUT> [<VERSION>]] [--package-dir <DIR>] \
 
 `--keep-staging` retains the printed temporary debcargo staging directory for inspection, including when generation fails.
 
+Debcargo diagnostics appear on stderr after successful generation or release resolution, with routine progress and FIXME advice filtered out. Patch fuzz notices remain visible. Failed debcargo commands include their complete stdout and stderr in the error report.
+
 ## Input and version selection
 
 `package` and `deps` share the following input selectors and version rules:

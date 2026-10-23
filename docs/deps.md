@@ -13,6 +13,8 @@ Inputs can be crates.io crates (`serde` or `crate:serde`), local source packages
 
 Crates.io and `local:` inputs generate fresh packaging with default debcargo configuration in temporary directories. Local package and published inputs read maintained `debian/control` and optional `debian/tests/control` directly. For these inputs, inspection needs the maintained control files and changelog. Existing package files remain unchanged during inspection.
 
+Debcargo diagnostics from temporary generation appear on stderr, with routine progress and FIXME advice filtered out. Patch fuzz notices remain visible. Failed debcargo commands include their complete stdout and stderr in the error report.
+
 `--suite` selects the checking environment as `ubuntu:<SUITE>` or `debian:<SUITE>`. A bare suite name is Ubuntu shorthand, so `--suite resolute` and `--suite ubuntu:resolute` select the same environment. An explicit option takes precedence over the input's default.
 
 A Debian input defaults to its exact Debian suite: `debian:unstable/rust-serde` checks against `debian:unstable`. An Ubuntu Archive input defaults to its base Ubuntu series, and a PPA input defaults to its Ubuntu series. Crates.io and local inputs default to the current Ubuntu development series reported by `ubuntu-distro-info --devel`. Development-series detection runs only when both an explicit suite and a published-input default are absent; if it fails, supply `--suite` explicitly.

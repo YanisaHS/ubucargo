@@ -4,6 +4,7 @@ mod apt;
 mod cargo;
 mod changelog;
 mod config;
+mod debcargo;
 mod deps;
 mod generate;
 mod input;

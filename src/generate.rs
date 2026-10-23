@@ -14,8 +14,9 @@ use crate::{
     cargo::read_package_identity,
     changelog::prepare_changelog,
     config::{get_staged_config_path, write_staged_config},
+    debcargo,
     resolve::{CrateSelection, ResolvedPackage, normalize_crate_name},
-    util::{copy_tree, run_command},
+    util::copy_tree,
 };
 
 /// Selects full packaging or preparation for maintainer patch porting.
@@ -92,8 +93,7 @@ fn run_debcargo(stage: &Path, crate_selection: &CrateSelection) -> Result<()> {
         // Set CARGO_TARGET_DIR to a unique staging directory, to work around
         // github.com/rust-lang/cargo/issues/16683:
         .env("CARGO_TARGET_DIR", stage.join("cargo-target"));
-    run_command(&mut command, "debcargo package")?;
-    Ok(())
+    debcargo::run_command(&mut command, "debcargo package")
 }
 
 /// Validates staged source identity, Cargo identity, essential packaging, and orig naming.
