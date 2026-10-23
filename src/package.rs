@@ -229,7 +229,7 @@ pub fn run(args: PackageArgs) -> Result<()> {
     };
 
     // Reconcile source and the selected packaging in staging. Full generation
-    // also restores the original quilt position against the updated upstream.
+    // also restores the maintained quilt position against the updated upstream.
     // Compare the completed tree with the destination so unchanged files retain
     // their modification times.
     let mut overrides = Vec::new();
@@ -255,6 +255,26 @@ pub fn run(args: PackageArgs) -> Result<()> {
         create_new(&destination, &resolved.config, &generated)?;
     }
     if let Some(package) = &acquired {
+        if mode == GenerationMode::Full
+            && top_patch
+                .as_deref()
+                .is_some_and(|top| top.starts_with("auto/"))
+        {
+            // Generated patch names can change; restore the fresh automatic prefix.
+            top_patch = None;
+            if let Some(series) = read_state(&package.root.join("debian/patches/series"))? {
+                for line in std::str::from_utf8(&series.contents)?.lines() {
+                    let patch = line.split_whitespace().next().unwrap_or("");
+                    if patch.is_empty() || patch.starts_with('#') {
+                        continue;
+                    }
+                    if !patch.starts_with("auto/") {
+                        break;
+                    }
+                    top_patch = Some(patch.to_owned());
+                }
+            }
+        }
         if mode == GenerationMode::Full
             && let Some(top) = top_patch
         {

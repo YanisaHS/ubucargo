@@ -16,8 +16,10 @@ pub struct PackageConfig {
     pub original_contents: String,
     /// Whether the Debian source name includes the crate's semver line; defaults to false.
     pub semver_suffix: bool,
-    /// Explicit repack suffix, or "ds" when only `excludes` is set, or none.
-    pub effective_repack_suffix: Option<String>,
+    /// Explicit repack suffix, with the installed debcargo supplying the default.
+    pub repack_suffix: Option<String>,
+    /// Whether `excludes` is configured, enabling debcargo's default repack suffix.
+    pub has_excludes: bool,
     /// Canonical absolute local source path, or none for crates.io.
     /// Relative paths in `original_contents` refer to the final package's `debian` directory.
     pub resolved_crate_src_path: Option<PathBuf>,
@@ -128,14 +130,12 @@ fn parse_package_config(
         .get("semver_suffix")
         .and_then(|item| item.as_bool())
         .unwrap_or(false);
-    let effective_repack_suffix = if let Some(item) = config.get("repack_suffix") {
+    let repack_suffix = if let Some(item) = config.get("repack_suffix") {
         Some(
             item.as_str()
                 .context("repack_suffix must be a string")?
                 .to_owned(),
         )
-    } else if config.get("excludes").is_some() {
-        Some("ds".to_owned())
     } else {
         None
     };
@@ -146,7 +146,8 @@ fn parse_package_config(
             contents.to_owned()
         },
         semver_suffix,
-        effective_repack_suffix,
+        repack_suffix,
+        has_excludes: config.get("excludes").is_some(),
         resolved_crate_src_path,
     })
 }

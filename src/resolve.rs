@@ -8,7 +8,7 @@ use std::{
 };
 
 use anyhow::{Context, Result, bail};
-use semver::{Version, VersionReq};
+use semver::Version;
 
 use crate::{
     cargo::{read_package_identity, read_root_package},
@@ -19,10 +19,8 @@ use crate::{
     },
     debcargo,
     input::has_package_files,
-    util::run_command,
 };
 
-const DEBCARGO_VERSION_REQUIREMENT: &str = "^2.8.4";
 /// Exact crate release selected for final generation.
 #[derive(Clone)]
 pub struct CrateSelection {
@@ -120,7 +118,7 @@ pub fn resolve_package(
     config: PackageConfig,
     existing: Option<ExistingPackage>,
 ) -> Result<ResolvedPackage> {
-    let debcargo_version = check_debcargo_version()?;
+    let debcargo_version = debcargo::compat::check_version()?;
     let request = match (request, config.resolved_crate_src_path.as_deref()) {
         (CrateRequest::Current, Some(local)) => CrateRequest::Local(local),
         (request, _) => request,
@@ -173,8 +171,16 @@ pub fn resolve_package(
             None
         },
     );
-    let upstream =
-        cargo_to_debian_upstream_version(&version, config.effective_repack_suffix.as_deref());
+    let repack_suffix = if let Some(suffix) = &config.repack_suffix {
+        Some(suffix.as_str())
+    } else if config.has_excludes {
+        Some(debcargo::compat::get_default_repack_suffix(
+            &debcargo_version,
+        ))
+    } else {
+        None
+    };
+    let upstream = cargo_to_debian_upstream_version(&version, repack_suffix);
     Ok(ResolvedPackage {
         config,
         crate_selection,
@@ -188,29 +194,6 @@ pub fn resolve_package(
 /// Normalizes Cargo crate spelling to Debian's dashed lowercase form.
 pub fn normalize_crate_name(name: &str) -> String {
     name.replace('_', "-").to_lowercase()
-}
-
-/// Returns the installed debcargo version when it is compatible.
-fn check_debcargo_version() -> Result<Version> {
-    let output = run_command(
-        Command::new("debcargo").arg("--version"),
-        "debcargo --version",
-    )?;
-    parse_debcargo_version(String::from_utf8_lossy(&output.stdout).trim())
-}
-
-/// Parses and checks one `debcargo --version` response.
-fn parse_debcargo_version(output: &str) -> Result<Version> {
-    let version = output
-        .strip_prefix("debcargo ")
-        .with_context(|| format!("unrecognized debcargo version output {output:?}"))?;
-    let version = Version::parse(version)
-        .with_context(|| format!("unrecognized debcargo version output {output:?}"))?;
-    let requirement = VersionReq::parse(DEBCARGO_VERSION_REQUIREMENT).unwrap();
-    if !requirement.matches(&version) {
-        bail!("unsupported debcargo {version}; this release requires {requirement}");
-    }
-    Ok(version)
 }
 
 /// Parses an exact Cargo semantic version and rejects requirement syntax.
@@ -260,7 +243,8 @@ fn resolve_latest(crate_name: &str, config: &PackageConfig) -> Result<CrateSelec
             .arg(stage.path().join("output"))
             .arg(crate_name)
             .arg("*")
-            .current_dir(stage.path()),
+            .current_dir(stage.path())
+            .env_remove("CARGO_TARGET_DIR"),
         "debcargo extract",
     )?;
     let package = read_package_identity(&stage.path().join("output"))?;

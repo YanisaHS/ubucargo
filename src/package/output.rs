@@ -11,7 +11,10 @@ use anyhow::{Context, Result, bail};
 
 use crate::{
     config::{PackageConfig, write_package_config},
-    source::tree::{TreeNode, TreePlan, build_tree_plan, scan_tree},
+    source::{
+        filter_maintainer_patch_series,
+        tree::{TreeNode, TreePlan, build_tree_plan, scan_tree},
+    },
     util::run_command,
 };
 use debian_control::lossless::control::Control;
@@ -144,12 +147,9 @@ pub fn build_prepared_patch_plan(debian: &Path, generated: &Path) -> Result<Tree
         }
     })?;
     if let Some(old) = read_state(&debian.join(series_path))? {
-        for line in std::str::from_utf8(&old.contents)?.split_inclusive('\n') {
-            let patch = line.split_whitespace().next().unwrap_or("");
-            if !patch.starts_with("auto/") {
-                series.push_str(line);
-            }
-        }
+        series.push_str(&filter_maintainer_patch_series(std::str::from_utf8(
+            &old.contents,
+        )?));
     }
     if !series.is_empty() {
         fs::create_dir_all(generated.join("patches"))?;

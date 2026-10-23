@@ -92,6 +92,18 @@ pub fn read_top_patch(source: &Path) -> Result<Option<String>> {
     Ok(Some(top))
 }
 
+/// Retains maintained patch-series lines verbatim, excluding generated auto-patch entries.
+pub fn filter_maintainer_patch_series(series: &str) -> String {
+    let mut maintained = String::new();
+    for line in series.split_inclusive('\n') {
+        let patch = line.split_whitespace().next().unwrap_or("");
+        if !patch.starts_with("auto/") {
+            maintained.push_str(line);
+        }
+    }
+    maintained
+}
+
 /// Acquires maintained packaging for an already resolved final destination.
 pub fn acquire_package(
     input: &Input,

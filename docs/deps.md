@@ -83,7 +83,7 @@ The report contains one table for each of these, in order, omitting empty tables
 
 The `Source` and `Tests` tables show only relations that no earlier table lists identically. For a library crate, the default build's relations already appear in its binary packages, so the `Source` table usually lists only binaries' dependencies and manual `build_depends` overrides. The report covers external Rust package relations with concrete package names and version constraints. Test `Architecture` fields filter whole test paragraphs before their dependencies are read, using Debian architecture names, wildcards, and exclusions. An omitted field includes the test on every architecture.
 
-When features are collapsed, as debcargo does by default, one binary package lists the dependencies of all features. Otherwise, each feature package lists the dependencies that its feature adds directly; dependencies of features it enables appear in those features' tables.
+When features are collapsed, one binary package lists the dependencies of all features. Debcargo enables this by default starting with 2.8.3; maintainers can select it explicitly with `collapse_features`. Otherwise, each feature package lists the dependencies that its feature adds directly; dependencies of features it enables appear in those features' tables.
 
 The report shows each dependency and its candidates:
 

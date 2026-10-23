@@ -97,6 +97,6 @@ See [`docs/deps.md`](docs/deps.md) for details.
 
 ## Requirements
 
-It currently requires APT, Cargo, curl, GnuPG, quilt, devscripts, distro-info (for automatic development-series selection), GNU coreutils (including `sha256sum` and `sha512sum`), ubuntu-dev-tools, the Ubuntu archive keyring, and debcargo 2.8.4 or a later compatible 2.x release.
+It currently requires APT, Cargo, curl, GnuPG, quilt, devscripts, distro-info (for automatic development-series selection), GNU coreutils (including `sha256sum` and `sha512sum`), ubuntu-dev-tools, the Ubuntu archive keyring, and debcargo 2.8.2 or a later compatible 2.x release.
 
 Debian sources and dependency environments additionally require `debian-archive-keyring`, which supplies `/usr/share/keyrings/debian-archive-keyring.gpg`.

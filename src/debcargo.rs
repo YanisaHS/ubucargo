@@ -1,5 +1,7 @@
 //! Runs debcargo while keeping useful diagnostics visible.
 
+pub mod compat;
+
 use std::process::Command;
 
 use anyhow::Result;
