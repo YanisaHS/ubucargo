@@ -290,8 +290,7 @@ For a new package, ubucargo retains debcargo's `debian/source/format`. On subseq
 
 ### Generated patches
 
-Debcargo may generate patches for configuration-driven source transformations such as `remove_features`. The entire `debian/patches/auto/` namespace is exclusively generator-owned. On regeneration, ubucargo silently replaces edited patches, restores deleted generated patches, and removes files no longer generated. No ownership baseline or keep-or-replace decision is required. 
-Therefore, maintainers should not edit these automatically generated patches.
+Debcargo may generate patches for configuration-driven source transformations such as `remove_features`. The entire `debian/patches/auto/` namespace is exclusively generator-owned. On regeneration, ubucargo silently replaces edited patches, restores deleted generated patches, and removes files no longer generated. No ownership baseline or keep-or-replace decision is required. Therefore, maintainers should not edit these automatically generated patches.
 
 `debian/patches/series` has mixed ownership. During full generation, debcargo receives the maintained series entries as overlay input and supplies its fresh `auto/` entries; ubucargo writes that merged output. During preparation, ubucargo prepends the fresh automatic entries to the maintained series, replacing its old automatic entries and preserving the remaining text.
 
@@ -399,4 +398,8 @@ For full generation, ubucargo materializes primary files, patch series, hints, a
 
 Ubucargo applies changes to files only. It does not create commits, branches, tags, pristine-tar data, `.dsc` files, source `.changes`, or `.buildinfo` files. Standard Debian and VCS tools remain responsible for those artifacts.
 
-Ubucargo requires debcargo 2.8.2 or a later compatible 2.x release and checks the installed version before running it. Packaging defaults and configuration capabilities follow the installed generator; debcargo diagnostics identify unsupported settings.
+## Debcargo compatibility
+
+Ubucargo requires debcargo 2.8.2 or a later compatible 2.x release (`^2.8.2`) and checks the installed version before release resolution or generation. CI exercises the integration suite with debcargo 2.8.2 and 2.8.4.
+
+Ubucargo tries to minimize depending on behavior that varies across debcargo versions. It lets debcargo control the packaging policy and configuration interpretation, and this behavior can differ between versions: for example, `collapse_features` defaults to `true` starting with debcargo 2.8.3, and the default `repack_suffix` has also changed. Maintainers can set `collapse_features` and `repack_suffix` explicitly when consistent behavior across debcargo versions matters.
