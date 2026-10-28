@@ -1,6 +1,6 @@
 # Ubucargo
 
-Ubucargo is a tool for creating and maintaining Ubuntu packages for Rust crates, translating Cargo dependencies in `Cargo.toml` into Debian source package data including `debian/control`. It is a wrapper around `debcargo`, the corresponding tool for Debian packages.
+Ubucargo is a tool for creating and maintaining Ubuntu packages for Rust crates, translating Cargo dependencies in `Cargo.toml` into Debian source package data including `debian/control`. It is a wrapper around [`debcargo`](https://salsa.debian.org/rust-team/debcargo/-/blob/master/README.md), the corresponding tool for Debian packages.
 
 Disclaimer: This software is currently **experimental**. It may contain bugs, and its CLI may change.
 
@@ -10,7 +10,7 @@ Ubucargo is designed to operate directly on a Debian source package, with its `d
 
 ## Benefits
 
-Benefits of Ubucargo include the following:
+Benefits of ubucargo include the following:
 
 - Maintainers can override Debian packaging in place (such as `debian/control`) without risk of them being overwritten by `ubucargo`, and without needing to manage a separate overlay directory. When `ubucargo package` runs, it writes the generated alternative to a corresponding `.debcargo.hint` file wherever it differs from the primary file.
 - Regenerating source packaging can be done without interfering with local files such as a `.git` directory. This way `ubucargo` can be conveniently used in conjunction with tools such as `git-ubuntu` and `gbp`.
@@ -43,6 +43,56 @@ Each source package contains its upstream source, generator input `debcargo.toml
       copyright.debcargo.hint     # latest generated alternative
 ```
 
+## Installation
+
+### Requirements
+
+It currently requires APT, Cargo, curl, GnuPG, quilt, devscripts, dpkg-dev, distro-info (for automatic development-series selection), GNU coreutils (including `sha256sum` and `sha512sum`), ubuntu-dev-tools, the Ubuntu archive keyring, and debcargo 2.8.2 or a later compatible 2.x release.
+
+Building on Ubuntu additionally requires `pkg-config` and `libssl-dev`. Crates.io HTTPS requests use the system OpenSSL library and system CA certificates through reqwest's `native-tls` backend.
+
+On Ubuntu 26.04 LTS, the following command installs these requirements:
+
+```sh
+sudo apt install cargo debcargo devscripts dpkg-dev distro-info ubuntu-dev-tools \
+  ubuntu-keyring quilt curl gnupg pkg-config libssl-dev
+```
+
+On Ubuntu 24.04 LTS, the packaged Rust toolchain is too old to build ubucargo, and the packaged debcargo is older than 2.8.2. Run the same command without `cargo` and `debcargo`. Then install a newer Rust toolchain, for example with [rustup](https://rustup.rs/), and install debcargo with Cargo, as the CI workflow does:
+
+```sh
+cargo install debcargo --version '^2.8.2' --locked
+```
+
+Ubucargo follows the installed debcargo's behavior, so generated output can vary between versions. CI exercises debcargo 2.8.2 and 2.8.4. See [debcargo compatibility](docs/package.md#debcargo-compatibility) for details.
+
+Debian sources and dependency environments additionally require `debian-archive-keyring`, which supplies `/usr/share/keyrings/debian-archive-keyring.gpg`.
+
+### Install ubucargo
+
+Ubucargo is published on [crates.io](https://crates.io/crates/ubucargo). After installing the requirements, install it with Cargo:
+
+```sh
+cargo install ubucargo
+```
+
+By default, Cargo installs `ubucargo` in `~/.cargo/bin`, so make sure that directory is on your `PATH`.
+
+Ubucargo writes changelog entries with `dch` without reading devscripts configuration files. To set the name and email address in those entries, set `DEBFULLNAME` and `DEBEMAIL` in your environment, as described in [dch(1)](https://manpages.ubuntu.com/manpages/resolute/man1/dch.1.html).
+
+## Typical workflow
+
+Ubucargo prepares source packages, but it doesn't build them. For example:
+
+```sh
+ubucargo deps serde      # Check the dependencies against the current Ubuntu development series
+ubucargo package serde   # Create ./rust-serde and its orig tarball
+cd rust-serde
+grep -rn FIXME debian/   # Find details that debcargo couldn't fill in
+```
+
+Ubucargo hides debcargo's FIXME summary, so search the generated files for `FIXME` yourself. After reviewing and editing the files in `debian/`, use `sbuild` and `autopkgtest` to build and test the package. See [Building and testing packages](https://ubuntu.com/project/docs/contributors/building/) in the Ubuntu project documentation. Your edits are preserved when you run `ubucargo package` again.
+
 ## Commands
 
 | Command | Purpose | Detailed specification |
@@ -57,7 +107,7 @@ These commands share a common syntax for specifying an input crate, including cr
 ```console
 ubucargo package [<INPUT> [<VERSION>]] [--package-dir <DIR>] \
   [--config <PATH>] [--prepare-only] [--force] \
-  [--keep-staging] [--keep <PATH>]... [--replace <PATH>]...
+  [--keep-staging] [--keep <PATH>]... [--replace <PATH>]... [--crates-io-api <URL>]
 ```
 
 - Run `ubucargo package <CRATE> [<VERSION>]` outside a package to create or update its default source-package directory.
@@ -81,7 +131,8 @@ See [`docs/package.md`](docs/package.md) for full behavior and options.
 
 ```console
 ubucargo deps [<INPUT> [<VERSION>]] [--suite <SUITE>] \
-  [--proposed] [--ppa ppa:<OWNER>/<NAME>]... [--architecture <ARCH>] [--keep-staging]
+  [--proposed] [--ppa ppa:<OWNER>/<NAME>]... [--architecture <ARCH>] [--keep-staging] \
+  [--crates-io-api <URL>]
 ```
 
 `deps` reports the direct Rust library dependencies, represented by `librust-*-dev` packages needed to build and install every binary package and to run autopkgtests applicable to the selected architecture. Each dependency is checked independently for compatible candidates in the selected repositories. Use `sbuild` and `autopkgtest` to validate complete build and test environments.
@@ -89,18 +140,12 @@ ubucargo deps [<INPUT> [<VERSION>]] [--suite <SUITE>] \
 - Run `ubucargo deps <CRATE> [<VERSION>]` to inspect a crates.io release without creating a source package.
 - Run `ubucargo deps` inside a source package, or use `pkg:<PATH>` to select one explicitly.
 - Use `--suite ubuntu:<SUITE>` or `--suite debian:<SUITE>` to select the dependency environment. Bare suite names select Ubuntu. Debian inputs default to their exact suite; Ubuntu and PPA inputs default to their base Ubuntu series. Crates.io and local inputs default to the current Ubuntu development series.
-- Add `--proposed` to include a base Ubuntu suite’s proposed pocket.
+- Add `--proposed` to include a base Ubuntu suite's proposed pocket.
 - `deps` does not modify the source package.
 - It exits 0 when every reported direct Rust dependency has a compatible candidate, 1 when any are incompatible, missing, or unknown, and 2 on errors. Dependencies reported as `unknown` require manual assessment.
 
 See [`docs/deps.md`](docs/deps.md) for details.
 
-## Requirements
+## Contributing
 
-It currently requires APT, Cargo, curl, GnuPG, quilt, devscripts, distro-info (for automatic development-series selection), GNU coreutils (including `sha256sum` and `sha512sum`), ubuntu-dev-tools, the Ubuntu archive keyring, and debcargo 2.8.2 or a later compatible 2.x release.
-
-Building on Ubuntu additionally requires `pkg-config` and `libssl-dev`. Crates.io HTTPS requests use the system OpenSSL library and system CA certificates through reqwest's `native-tls` backend.
-
-Ubucargo follows the installed debcargo's behavior, so generated output can vary between versions. CI exercises debcargo 2.8.2 and 2.8.4. See [debcargo compatibility](docs/package.md#debcargo-compatibility) for details.
-
-Debian sources and dependency environments additionally require `debian-archive-keyring`, which supplies `/usr/share/keyrings/debian-archive-keyring.gpg`.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, checks, and code style.

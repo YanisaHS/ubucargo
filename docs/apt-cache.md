@@ -24,6 +24,8 @@ Ubucargo generates APT sources for dependency checks and published source select
 
 The root is `$XDG_CACHE_HOME/ubucargo/apt` when `XDG_CACHE_HOME` is set. `status` and `preferences` are empty files; `sourceparts/` and `preferences.d/` are empty directories. They are created when missing and otherwise left untouched. These files are generated cache state, not user configuration.
 
+You can delete the cache directory when no ubucargo command is running. The next invocation recreates it and downloads the selected indexes again.
+
 `sources.sources` is written only when its generated contents change, while the shared view is locked. Unchanged invocations preserve source and status modification times. APT decides whether the binary cache remains valid after a selection change.
 
 `apt-get update` receives `pkgCacheFile::Generate=false` to preserve the binary cache while refreshing repository metadata. This override applies only to `update`; `indextargets` validates and reuses `pkgcache.bin`, rebuilding it when needed. `srcpkgcache.bin` remains disabled because the installed-package status is always empty.
@@ -34,7 +36,7 @@ All invocations share `lists/`. APT list cleanup is disabled so changing the req
 
 ## Sources
 
-For `deps --suite resolute`, Ubucargo creates binary and source entries for `resolute`, `resolute-updates`, and `resolute-security`, using `main` and `universe` for the selected architecture. `--proposed` adds `resolute-proposed` from the same Archive source. Each `--ppa ppa:<OWNER>/<NAME>` adds a binary and source `main` entry for Resolute. Only public Launchpad PPAs are supported; ubucargo does not read or manage credentials for private PPAs.
+For `deps --suite resolute`, ubucargo creates binary and source entries for `resolute`, `resolute-updates`, and `resolute-security`, using `main` and `universe` for the selected architecture. `--proposed` adds `resolute-proposed` from the same Archive source. Each `--ppa ppa:<OWNER>/<NAME>` adds a binary and source `main` entry for Resolute. Only public Launchpad PPAs are supported; ubucargo does not read or manage credentials for private PPAs.
 
 The generated deb822 entries select only their required APT targets:
 
@@ -86,7 +88,7 @@ Ubucargo runs `apt-get update` with command-line configuration that supplies:
 - no list cleanup; and
 - no translation downloads.
 
-APT updates the selected indexes on every invocation. Update failures are fatal (`APT::Update::Error-Mode=any`), so an unavailable repository cannot silently turn into a misleading absence report. It reuses unchanged files and may apply index deltas, so Ubucargo needs no freshness policy or per-view cache identity.
+APT updates the selected indexes on every invocation. Update failures are fatal (`APT::Update::Error-Mode=any`), so an unavailable repository cannot silently turn into a misleading absence report. It reuses unchanged files and may apply index deltas, so ubucargo needs no freshness policy or per-view cache identity.
 
 Queries use the same source file and list directory. `apt-get indextargets` identifies the selected package indexes and their repository locations. Ubucargo reads `Packages` files for Rust versions and `Provides` and `Sources` files for source names, Debian versions, declared binaries, locations, and descriptor checksums. Dependency classification uses only checking-suite binaries. Inspection of published inputs across distributions or series queries the input view and checking view sequentially, releasing the shared lock between them; parsed results remain separate. Source metadata uses the same signature verification and index cache as binary metadata. Input selectors determine source distributions, suites, and pockets independently of dependency environment flags; a bare Ubuntu Archive series selects release, updates, and security, while a suffixed Ubuntu suite selects that pocket alone. A Debian selector uses its exact suite in `main`.
 

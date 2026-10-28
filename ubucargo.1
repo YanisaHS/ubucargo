@@ -258,6 +258,14 @@ Retain and print temporary staging directories for inspection, including
 on failure.
 Available with both subcommands.
 .TP
+.BI \-\-crates-io-api " URL"
+Use
+.I URL
+as the crates.io metadata API base URL.
+Defaults to
+.BR https://crates.io/api/v1 .
+Available with both subcommands.
+.TP
 .BR \-h ", " \-\-help
 Print help for the command or subcommand.
 .TP
@@ -279,6 +287,11 @@ When
 .B XDG_CACHE_HOME
 is unset, store the APT cache under
 .BR $HOME/.cache/ubucargo/apt .
+.TP
+.BR DEBFULLNAME ", " DEBEMAIL
+Name and email address used for changelog entries, which are written with
+.BR dch (1).
+Devscripts configuration files are not read.
 .SH FILES
 .TP
 .B debian/debcargo.toml
