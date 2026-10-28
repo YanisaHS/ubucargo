@@ -1,11 +1,7 @@
 //! Resolves and validates crate releases and configuration for staged generation.
 //! Shared by the package and deps commands.
 
-use std::{
-    fs,
-    path::{Path, PathBuf},
-    process::Command,
-};
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
 use semver::Version;
@@ -13,20 +9,17 @@ use semver::Version;
 use crate::{
     cargo::{read_package_identity, read_root_package},
     changelog::{TopChangelog, read_top_changelog, validate_top_changelog},
-    config::{
-        PackageConfig, get_package_config_path, get_staged_config_path, has_debcargo_config,
-        write_staged_config,
-    },
-    debcargo,
+    config::{PackageConfig, get_package_config_path, has_debcargo_config},
+    crates_io, debcargo,
     input::has_package_files,
 };
 
 /// Exact crate release selected for final generation.
 #[derive(Clone)]
 pub struct CrateSelection {
-    /// Canonical crate name reported by Cargo.
+    /// Canonical Cargo package name.
     pub crate_name: String,
-    /// Exact Cargo semver string reported by Cargo.
+    /// Exact selected Cargo semantic version.
     pub version: String,
 }
 
@@ -59,6 +52,8 @@ pub struct ResolvedPackage {
     pub config: PackageConfig,
     /// Exact crate release selected for regeneration.
     pub crate_selection: CrateSelection,
+    /// Highest non-yanked stable crates.io version for a registry input.
+    pub latest_version: Option<Version>,
     /// Debian source name for the selected crate release.
     pub source_name: String,
     /// Debian upstream version for the selected crate release.
@@ -117,24 +112,38 @@ pub fn resolve_package(
     request: CrateRequest<'_>,
     config: PackageConfig,
     existing: Option<ExistingPackage>,
+    crates_io_api: &str,
 ) -> Result<ResolvedPackage> {
     let debcargo_version = debcargo::compat::check_version()?;
     let request = match (request, config.resolved_crate_src_path.as_deref()) {
         (CrateRequest::Current, Some(local)) => CrateRequest::Local(local),
         (request, _) => request,
     };
+    let mut latest_version = None;
     let crate_selection = match request {
         CrateRequest::Registry { name, version } => {
             if config.resolved_crate_src_path.is_some() {
                 bail!("CRATE and VERSION may not be used with crate_src_path");
             }
-            if let Some(version) = version {
-                CrateSelection {
-                    crate_name: name.to_owned(),
-                    version: version.to_owned(),
-                }
+            let metadata = crates_io::read_crate(name, crates_io_api)?
+                .with_context(|| format!("crate {name} is not published on crates.io"))?;
+            latest_version = metadata.latest_version;
+            let version = if let Some(version) = version {
+                version.to_owned()
             } else {
-                resolve_latest(name, &config)?
+                latest_version
+                    .as_ref()
+                    .with_context(|| {
+                        format!(
+                            "crate {} has no non-yanked stable release; specify an exact version",
+                            metadata.name
+                        )
+                    })?
+                    .to_string()
+            };
+            CrateSelection {
+                crate_name: metadata.name,
+                version,
             }
         }
         CrateRequest::Local(local) => {
@@ -184,6 +193,7 @@ pub fn resolve_package(
     Ok(ResolvedPackage {
         config,
         crate_selection,
+        latest_version,
         source_name,
         upstream,
         debcargo_version,
@@ -226,36 +236,4 @@ pub fn get_crate_source_name(crate_name: &str, semver_suffix: Option<&Version>) 
         }
     }
     source
-}
-
-/// Resolves the latest non-yanked stable crate release using debcargo.
-/// An explicit wildcard requirement excludes prereleases from automatic selection.
-fn resolve_latest(crate_name: &str, config: &PackageConfig) -> Result<CrateSelection> {
-    let stage = tempfile::tempdir().context("create latest-version staging directory")?;
-    fs::create_dir(stage.path().join("overlay"))?;
-    write_staged_config(config, stage.path())?;
-    debcargo::run_command(
-        Command::new("debcargo")
-            .arg("extract")
-            .arg("--config")
-            .arg(get_staged_config_path(stage.path()))
-            .arg("--directory")
-            .arg(stage.path().join("output"))
-            .arg(crate_name)
-            .arg("*")
-            .current_dir(stage.path())
-            .env_remove("CARGO_TARGET_DIR"),
-        "debcargo extract",
-    )?;
-    let package = read_package_identity(&stage.path().join("output"))?;
-    if normalize_crate_name(crate_name) != normalize_crate_name(&package.name) {
-        bail!(
-            "debcargo selected crate {} instead of {crate_name}",
-            package.name
-        );
-    }
-    Ok(CrateSelection {
-        crate_name: package.name,
-        version: package.version,
-    })
 }

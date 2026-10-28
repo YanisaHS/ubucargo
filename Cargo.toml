@@ -21,6 +21,7 @@ debian-control = { version = "0.3.17", default-features = false, features = ["lo
 deb822-fast = "0.2"
 debversion = "0.5"
 indoc = "2"
+reqwest = { version = "0.13", default-features = false, features = ["blocking", "json", "native-tls", "system-proxy"] }
 
 [dev-dependencies]
 similar-asserts = "1.7"

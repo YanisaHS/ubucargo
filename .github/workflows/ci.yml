@@ -27,14 +27,14 @@ jobs:
       - name: Check formatting
         run: cargo fmt --all -- --check
 
-      - name: Check Clippy lints
-        run: cargo clippy --locked --all-targets --all-features -- -D warnings
-
       - name: Install test dependencies
         run: |
           sudo apt-get update
           sudo apt-get install --yes --no-install-recommends devscripts ubuntu-dev-tools quilt pkg-config libssl-dev
           cargo install debcargo --version ${{ matrix.debcargo }} --locked
+
+      - name: Check Clippy lints
+        run: cargo clippy --locked --all-targets --all-features -- -D warnings
 
       - name: Run tests
         run: cargo test --locked --all-targets --all-features

@@ -4,6 +4,7 @@ mod apt;
 mod cargo;
 mod changelog;
 mod config;
+mod crates_io;
 mod debcargo;
 mod deps;
 mod generate;
@@ -21,6 +22,15 @@ use clap::{Parser, Subcommand};
 #[derive(Parser)]
 #[command(version, about = "Maintain Ubuntu Rust source packages with debcargo")]
 struct Cli {
+    /// Crates.io metadata API base URL.
+    #[arg(
+        long,
+        global = true,
+        value_name = "URL",
+        default_value = "https://crates.io/api/v1"
+    )]
+    crates_io_api: String,
+
     /// Operation to perform.
     #[command(subcommand)]
     command: Command,
@@ -38,15 +48,18 @@ enum Command {
 
 /// Parses the command line, runs the selected command, and maps its result to an exit status.
 fn main() -> ExitCode {
-    let result = match Cli::parse().command {
-        Command::Deps(args) => deps::run(args).map(|unsatisfied| {
+    let cli = Cli::parse();
+    let result = match cli.command {
+        Command::Deps(args) => deps::run(args, &cli.crates_io_api).map(|unsatisfied| {
             if unsatisfied {
                 ExitCode::from(1)
             } else {
                 ExitCode::SUCCESS
             }
         }),
-        Command::Package(args) => package::run(args).map(|()| ExitCode::SUCCESS),
+        Command::Package(args) => {
+            package::run(args, &cli.crates_io_api).map(|()| ExitCode::SUCCESS)
+        }
     };
 
     match result {

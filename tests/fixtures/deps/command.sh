@@ -1,10 +1,8 @@
 #!/bin/sh
-# Stand in for service-facing commands while keeping each invocation observable.
+# Stand in for APT while keeping each invocation observable.
 set -eu
 fixture=$UBUCARGO_TEST_FIXTURE
 
-# Record unexpected calls separately because the crates.io availability check
-# handles curl failures without failing the command.
 reject_call() {
     printf '%s\n' "$*" >> "$fixture/unexpected-calls"
     printf 'unexpected fixture command: %s\n' "$*" >&2
@@ -47,22 +45,6 @@ case "${0##*/}" in
                 ;;
             *) reject_call "apt-get $*" ;;
         esac
-        ;;
-    curl)
-        write_out=
-        while [ "$#" -gt 0 ]; do
-            case "$1" in
-                --silent|--show-error|--location) shift ;;
-                --connect-timeout|--max-time|--user-agent) shift 2 ;;
-                --write-out) write_out=$2; shift 2 ;;
-                https://*) break ;;
-                *) reject_call "curl $*" ;;
-            esac
-        done
-        [ "$#" = 1 ] && [ "$1" = https://crates.io/api/v1/crates/example ] || reject_call "curl $*"
-        [ "$write_out" = "$(printf '\n%%{http_code}')" ] || reject_call "curl write-out: $write_out"
-        printf 'curl %s\n' "$1" >> "$fixture/calls"
-        printf '{"versions":[{"num":"1.0.0","yanked":false}]}\n200'
         ;;
     *) reject_call "$0 $*" ;;
 esac

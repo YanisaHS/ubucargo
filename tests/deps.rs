@@ -2,9 +2,13 @@
 
 use std::{
     fs,
+    io::{BufRead, BufReader, Write},
+    net::{TcpListener, TcpStream},
     os::unix::fs::PermissionsExt,
     path::Path,
     process::{Command, Output},
+    thread,
+    time::Duration,
 };
 
 use indoc::{formatdoc, indoc};
@@ -42,11 +46,9 @@ fn create_fixture(control: &str, tests: Option<&str>, packages: &str) -> TempDir
         ),
     )
     .unwrap();
-    for name in ["apt-get", "curl"] {
-        let path = root.join("bin").join(name);
-        fs::write(&path, include_str!("fixtures/deps/command.sh")).unwrap();
-        fs::set_permissions(path, fs::Permissions::from_mode(0o755)).unwrap();
-    }
+    let path = root.join("bin/apt-get");
+    fs::write(&path, include_str!("fixtures/deps/command.sh")).unwrap();
+    fs::set_permissions(path, fs::Permissions::from_mode(0o755)).unwrap();
     fixture
 }
 
@@ -69,6 +71,37 @@ fn format_package(name: &str, version: &str, source: &str, provides: &str) -> St
 /// Runs the real binary and checks its status and fixture calls.
 fn run_deps(root: &Path, expected_status: i32) -> Output {
     fs::write(root.join("calls"), "").unwrap();
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    let api = format!("http://{address}/api/v1");
+    let calls = root.join("calls");
+    let server = thread::spawn(move || {
+        for connection in listener.incoming() {
+            let mut stream = connection.unwrap();
+            stream
+                .set_read_timeout(Some(Duration::from_secs(2)))
+                .unwrap();
+            let mut reader = BufReader::new(&stream);
+            let mut line = String::new();
+            // An empty connection from the test thread stops the server after the CLI exits.
+            if reader.read_line(&mut line).unwrap() == 0 {
+                break;
+            }
+            assert_eq!(line, "GET /api/v1/crates/example HTTP/1.1\r\n");
+            let mut log = fs::OpenOptions::new().append(true).open(&calls).unwrap();
+            writeln!(log, "GET /api/v1/crates/example").unwrap();
+            loop {
+                line.clear();
+                assert_ne!(reader.read_line(&mut line).unwrap(), 0);
+                if line == "\r\n" {
+                    break;
+                }
+            }
+            let body =
+                r#"{"crate":{"name":"example"},"versions":[{"num":"1.0.0","yanked":false}]}"#;
+            write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).unwrap();
+        }
+    });
     let mut paths = vec![root.join("bin")];
     paths.extend(std::env::split_paths(&std::env::var_os("PATH").unwrap()));
     let output = Command::new(env!("CARGO_BIN_EXE_ubucargo"))
@@ -79,10 +112,13 @@ fn run_deps(root: &Path, expected_status: i32) -> Output {
             "ubuntu:resolute",
             "--architecture",
             "amd64",
+            "--crates-io-api",
+            &api,
         ])
         .current_dir(root)
         .env("PATH", std::env::join_paths(paths).unwrap())
         .env("UBUCARGO_TEST_FIXTURE", root)
+        .env("NO_PROXY", "127.0.0.1")
         .env("XDG_CACHE_HOME", root.join("cache"))
         .env("CARGO_HOME", root.join("cargo-home"))
         .env("CARGO_NET_OFFLINE", "true")
@@ -91,6 +127,8 @@ fn run_deps(root: &Path, expected_status: i32) -> Output {
         .env("NO_COLOR", "1")
         .output()
         .unwrap();
+    drop(TcpStream::connect(address).unwrap());
+    server.join().unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
@@ -107,7 +145,7 @@ fn run_deps(root: &Path, expected_status: i32) -> Output {
         assert!(stderr.is_empty(), "{stderr}");
         assert_eq!(
             fs::read_to_string(root.join("calls")).unwrap(),
-            "apt-get update\napt-get indextargets\ncurl https://crates.io/api/v1/crates/example\n",
+            "apt-get update\napt-get indextargets\nGET /api/v1/crates/example\n",
         );
     }
     output

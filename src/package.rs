@@ -84,7 +84,7 @@ pub struct PackageArgs {
 }
 
 /// Creates or updates one source package.
-pub fn run(args: PackageArgs) -> Result<()> {
+pub fn run(args: PackageArgs, crates_io_api: &str) -> Result<()> {
     let current = std::env::current_dir()
         .context("get current directory")?
         .canonicalize()
@@ -176,7 +176,7 @@ pub fn run(args: PackageArgs) -> Result<()> {
         Input::Local(path) => CrateRequest::Local(path),
         _ => CrateRequest::Current,
     };
-    let mut resolved = resolve_package(request, config, existing)?;
+    let mut resolved = resolve_package(request, config, existing, crates_io_api)?;
     let action = if resolved.existing.is_none() {
         "Create new package"
     } else if acquired.as_ref().is_some_and(|package| !package.update) {

@@ -5,7 +5,7 @@
 ```console
 ubucargo package [<INPUT> [<VERSION>]] [--package-dir <DIR>] \
   [--config <PATH>] [--prepare-only] [--force] \
-  [--keep-staging] [--keep <PATH>]... [--replace <PATH>]...
+  [--keep-staging] [--keep <PATH>]... [--replace <PATH>]... [--crates-io-api <URL>]
 ```
 
 `package` creates or updates a Debian source tree and orig tarball. By default, the source tree includes upstream source, generated packaging, configuration, the ownership manifest, and generated-file hints. The orig tarball is placed beside the source directory.
@@ -43,7 +43,9 @@ For Ubuntu Archive inputs, `<SUITE>` is either a base series or a series with a 
 
 For Debian inputs, `<SUITE>` selects exactly that suite from `https://deb.debian.org/debian` in `main`, for example `unstable`, `sid`, `testing`, or `trixie`. Version selection uses the same Debian ordering and deterministic ties as Ubuntu Archive inputs. Regeneration prepares the selected Debian packaging for Ubuntu, including the Ubuntu maintainer adjustment and changelog conventions described below.
 
-For crates.io inputs, omitting `<VERSION>` asks debcargo and Cargo for the greatest release matching Cargo's `*` requirement, excluding yanked releases and prereleases. An exact request may select a prerelease or yanked release. Crates published only as prereleases require an exact version.
+For crates.io inputs, both commands query the crates.io metadata API to resolve the canonical published name, treating hyphens, underscores, and case as equivalent. For example, `serde-json` resolves to `serde_json`. `--crates-io-api <URL>` overrides the metadata API base URL, which defaults to `https://crates.io/api/v1`.
+
+Omitting `<VERSION>` selects the highest non-yanked stable release from the same response. An exact request may select a prerelease or yanked release. Crates published only as prereleases require an exact version.
 
 For dependency-checking suites, pockets, and additional PPAs, see [`ubucargo deps`](deps.md).
 

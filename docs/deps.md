@@ -6,7 +6,8 @@ The command reports the direct Rust library dependencies, represented by `librus
 
 ```console
 ubucargo deps [<INPUT> [<VERSION>]] [--suite <SUITE>] \
-  [--proposed] [--ppa ppa:<OWNER>/<NAME>]... [--architecture <ARCH>] [--keep-staging]
+  [--proposed] [--ppa ppa:<OWNER>/<NAME>]... [--architecture <ARCH>] [--keep-staging] \
+  [--crates-io-api <URL>]
 ```
 
 Inputs can be crates.io crates (`serde` or `crate:serde`), local source packages (`./rust-serde` or `pkg:<PATH>`), local Cargo crates (`local:<PATH>`), Ubuntu Archive sources (`ubuntu:<SUITE>/<SOURCE>` or `<SUITE>/<SOURCE>`), Debian archive sources (`debian:<SUITE>/<SOURCE>`), or PPA sources (`ppa:<OWNER>/<NAME>/<SERIES>/<SOURCE>`). Omitting the input reads the nearest parent package containing `debian/changelog`. An optional positional `<VERSION>` selects an exact Cargo version for crates.io or Debian version for published inputs; these inputs default to the highest published version. Package and local Cargo inputs use their current version. See [input and version selection](package.md#input-and-version-selection) for details.
@@ -69,11 +70,13 @@ ubuntu:resolute availability: rust-rand 0.8.5-1
 
 For a Debian checking suite, the archive line uses its qualified selector, for example `debian:unstable availability: rust-rand 0.8.5-1`.
 
-Crates.io information comes from its metadata API, selecting the highest non-yanked stable version without downloading a crate archive. A missing crate displays `not published`, a crate with no eligible stable version displays `no stable release`, and request or metadata failures display `unavailable`. Requests have an eight-second overall timeout. These outcomes do not change dependency results or exit status.
+For crates.io inputs, a required metadata API lookup resolves the canonical crate name and highest non-yanked stable version before generation. Names such as `serde-json` resolve to their published spelling, `serde_json`. Lookup failures stop the command with exit status 2. Requests use reqwest's default timeouts.
+
+For local and published package inputs, crates.io availability is advisory. A missing crate displays `not published`, a crate with no eligible stable version displays `no stable release`, and request or metadata failures display `unavailable`. Dependency results and exit status follow the dependency checks.
 
 The archive entry describes the qualified checking suite and its selected pockets/components, excludes PPAs, and shows the highest full Debian version for each matching source package, retaining parallel semver lines grouped under a single suite label. Matching uses conventional Rust source names and declared Rust library binaries; absence displays `not packaged`. Local package and published inputs infer the crate name from control-file Rust binaries or conventional source names without requiring usable Cargo metadata.
 
-An unversioned crates.io input reuses its resolved version and avoids another API request. An unversioned archive input omits the archive availability line when its source is the only matching package and the distribution, exact suite, source name, and version match. When parallel source packages exist, the line includes every matching source, including the selected input. Explicit versions, local inputs, and checks across distributions or suites retain their relevant latest entries.
+Crates.io inputs reuse the resolution response for availability. Unversioned inputs omit the redundant crates.io availability line; explicit versions show the latest stable release. An unversioned archive input omits the archive availability line when its source is the only matching package and the distribution, exact suite, source name, and version match. When parallel source packages exist, the line includes every matching source, including the selected input. Explicit versions, local inputs, and checks across distributions or suites retain their relevant latest entries.
 
 The report contains one table for each of these, in order, omitting empty tables:
 

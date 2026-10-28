@@ -1,13 +1,12 @@
 //! Advisory crates.io and archive version information, separate from dependency classification.
-use std::{collections::BTreeMap, process::Command};
+use std::collections::BTreeMap;
 
-use anyhow::Result;
 use semver::Version;
-use serde::Deserialize;
 
 use super::control::parse_rust_package_name;
 use crate::apt::SourceCandidate;
 use crate::{
+    crates_io,
     input::{Input, Suite},
     resolve::normalize_crate_name,
 };
@@ -35,95 +34,19 @@ pub enum LatestRelease {
     Unavailable,
 }
 
-/// Version records returned by the crates.io crate metadata endpoint.
-#[derive(Deserialize)]
-struct CrateMetadata {
-    /// Published versions, whose publication order need not match semantic ordering.
-    versions: Vec<ReleaseMetadata>,
-}
-
-/// Fields needed to select a stable crates.io release.
-#[derive(Deserialize)]
-struct ReleaseMetadata {
-    /// Semantic release version.
-    num: String,
-    /// Whether new resolution should exclude this release.
-    yanked: bool,
-}
-
-/// Selects the greatest non-yanked stable version from crate metadata.
-fn select_latest_release(contents: &[u8]) -> Result<Option<Version>> {
-    let metadata: CrateMetadata = serde_json::from_slice(contents)?;
-    let mut latest: Option<Version> = None;
-    for release in metadata.versions {
-        let version = Version::parse(&release.num)?;
-        if release.yanked || !version.pre.is_empty() {
-            continue;
-        }
-        if latest
-            .as_ref()
-            .is_none_or(|old| version.cmp_precedence(old).is_gt())
-        {
-            latest = Some(version);
-        }
-    }
-    Ok(latest)
-}
-
-/// Interprets an HTTP response without letting lookup failures affect dependency results.
-fn parse_latest_response(status: &str, contents: &[u8]) -> LatestRelease {
-    match status {
-        "404" => LatestRelease::NotPublished,
-        "200" => match select_latest_release(contents) {
-            Ok(Some(version)) => LatestRelease::Version(version),
-            Ok(None) => LatestRelease::NoStableRelease,
-            Err(_) => LatestRelease::Unavailable,
-        },
-        _ => LatestRelease::Unavailable,
-    }
-}
-
-/// Queries crates.io metadata with bounded latency and no crate archive download.
-pub fn read_latest_release(crate_name: Option<&str>) -> LatestRelease {
+/// Reads advisory crates.io availability without changing dependency results.
+pub fn read_latest_release(crate_name: Option<&str>, api: &str) -> LatestRelease {
     let Some(crate_name) = crate_name else {
         return LatestRelease::Unavailable;
     };
-    if crate_name.is_empty()
-        || !crate_name
-            .bytes()
-            .all(|c| c.is_ascii_alphanumeric() || matches!(c, b'-' | b'_'))
-    {
-        return LatestRelease::Unavailable;
+    match crates_io::read_crate(crate_name, api) {
+        Ok(Some(metadata)) => match metadata.latest_version {
+            Some(version) => LatestRelease::Version(version),
+            None => LatestRelease::NoStableRelease,
+        },
+        Ok(None) => LatestRelease::NotPublished,
+        Err(_) => LatestRelease::Unavailable,
     }
-    let response = Command::new("curl")
-        .args([
-            "--silent",
-            "--show-error",
-            "--location",
-            "--connect-timeout",
-            "3",
-            "--max-time",
-            "8",
-            "--user-agent",
-            concat!("ubucargo/", env!("CARGO_PKG_VERSION")),
-            "--write-out",
-            "\n%{http_code}",
-        ])
-        .arg(format!("https://crates.io/api/v1/crates/{crate_name}"))
-        .output();
-    let Ok(response) = response else {
-        return LatestRelease::Unavailable;
-    };
-    if !response.status.success() {
-        return LatestRelease::Unavailable;
-    }
-    let Some(separator) = response.stdout.iter().rposition(|c| *c == b'\n') else {
-        return LatestRelease::Unavailable;
-    };
-    let Ok(status) = std::str::from_utf8(&response.stdout[separator + 1..]) else {
-        return LatestRelease::Unavailable;
-    };
-    parse_latest_response(status, &response.stdout[..separator])
 }
 
 /// Infers a crate identity from conventional Rust source names, including parallel semver suffixes.

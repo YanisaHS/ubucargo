@@ -142,7 +142,7 @@ struct Row {
 }
 
 /// Reads existing packaging or stages a crate, then reports direct Rust dependency candidates.
-pub fn run(args: DepArgs) -> Result<bool> {
+pub fn run(args: DepArgs, crates_io_api: &str) -> Result<bool> {
     let current = env::current_dir().context("get current directory")?;
     let input = if let Some(value) = &args.input {
         parse_input(value, &current)?
@@ -207,6 +207,7 @@ pub fn run(args: DepArgs) -> Result<bool> {
     }
     repositories.push(apt::Repository::select_archive(&suite, args.proposed));
     let records = apt::load_records(&repositories, &architecture)?;
+    let mut release = None;
     let (sections, header, mut identity) = match &input {
         Input::Crate(_) | Input::Local(_) => {
             let (request, config) = match &input {
@@ -223,7 +224,13 @@ pub fn run(args: DepArgs) -> Result<bool> {
                 ),
                 _ => unreachable!(),
             };
-            let resolved = resolve::resolve_package(request, config, None)?;
+            let resolved = resolve::resolve_package(request, config, None, crates_io_api)?;
+            if matches!(input, Input::Crate(_)) && args.version.is_some() {
+                release = Some(match &resolved.latest_version {
+                    Some(version) => latest::LatestRelease::Version(version.clone()),
+                    None => latest::LatestRelease::NoStableRelease,
+                });
+            }
             let location = match &input {
                 Input::Local(_) => args.input.as_deref().unwrap(),
                 _ => "crates.io",
@@ -303,11 +310,12 @@ pub fn run(args: DepArgs) -> Result<bool> {
             identity.crate_name = latest::infer_crate_name(&identity.source_name);
         }
     }
-    let release = if matches!(input, Input::Crate(_)) && args.version.is_none() {
-        None
-    } else {
-        Some(latest::read_latest_release(identity.crate_name.as_deref()))
-    };
+    if !matches!(input, Input::Crate(_)) {
+        release = Some(latest::read_latest_release(
+            identity.crate_name.as_deref(),
+            crates_io_api,
+        ));
+    }
     let latest = latest::format_latest(
         &input,
         args.version.is_some(),
