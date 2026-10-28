@@ -69,7 +69,7 @@ Output identifies the operation as `Create new package: <DIR>`, `Update existing
 
 ## Initial configuration
 
-`--config <PATH>` supplies the initial debcargo configuration for a new package from crates.io or a local Cargo input. The file is used during generation and saved as `debian/debcargo.toml`. For example, save the following configuration as `bevy.toml` to enable prerelease dependency conversion:
+`--config <PATH>` supplies the initial debcargo configuration for a new package from crates.io or a local Cargo input. The file is used during generation and saved as `debian/debcargo.toml`. See debcargo's [`debcargo.toml.example`](https://salsa.debian.org/rust-team/debcargo/-/blob/master/debcargo.toml.example) for the available settings. For example, save the following configuration as `bevy.toml` to enable prerelease dependency conversion:
 
 ```toml
 allow_prerelease_deps = true

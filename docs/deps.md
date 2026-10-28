@@ -18,7 +18,7 @@ Debcargo diagnostics from temporary generation appear on stderr, with routine pr
 
 `--suite` selects the checking environment as `ubuntu:<SUITE>` or `debian:<SUITE>`. A bare suite name is Ubuntu shorthand, so `--suite resolute` and `--suite ubuntu:resolute` select the same environment. An explicit option takes precedence over the input's default.
 
-A Debian input defaults to its exact Debian suite: `debian:unstable/rust-serde` checks against `debian:unstable`. An Ubuntu Archive input defaults to its base Ubuntu series, and a PPA input defaults to its Ubuntu series. Crates.io and local inputs default to the current Ubuntu development series reported by `ubuntu-distro-info --devel`. Development-series detection runs only when both an explicit suite and a published-input default are absent; if it fails, supply `--suite` explicitly.
+A Debian input defaults to its exact Debian suite: `debian:unstable/rust-serde` checks against `debian:unstable`. An Ubuntu Archive input defaults to its base Ubuntu series, and a PPA input defaults to its Ubuntu series. Crates.io and local inputs default to the current Ubuntu development series reported by `ubuntu-distro-info --devel`. Development-series detection runs only when both an explicit suite and a published-input default are absent; if it fails, update the `distro-info-data` package or supply `--suite` explicitly.
 
 For Ubuntu checking suites, a PPA input automatically adds its PPA to the checking repositories, using the checking suite's base series. Repeated PPA arguments are deduplicated. A PPA input checked against Debian supplies the maintained packaging, while the checking repositories come from Debian.
 
@@ -145,7 +145,7 @@ In all modes, candidates are ordered deterministically from the local APT indexe
 
 `deps` downloads binary `Packages` and source `Sources` indexes through its isolated, signature-verified APT view. Packages supply versions and versioned `Provides` for dependency classification; Sources supply publication selection and authenticated `.dsc` checksums.
 
-Published inputs are retrieved with `dget` using the descriptor URL from the selected repository and its signed Sources index. Ubucargo verifies descriptor size and SHA512 (preferred) or SHA256 against the signed source index, retains downloaded-file checksum verification, and extracts with `dpkg-source`. Input and checking APT views are queried sequentially; dependency classification uses only the checking view’s binary records.
+Published inputs are retrieved with `dget` using the descriptor URL from the selected repository and its signed Sources index. Ubucargo verifies descriptor size and SHA512 (preferred) or SHA256 against the signed source index, retains downloaded-file checksum verification, and extracts with `dpkg-source`. Input and checking APT views are queried sequentially; dependency classification uses only the checking view's binary records.
 
 Every invocation asks APT to update the selected indexes. APT reuses unchanged files and may apply index deltas. Indexes for all previously requested distributions, suites, and PPAs share the cache described in [`apt-cache.md`](apt-cache.md).
 
