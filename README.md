@@ -63,7 +63,7 @@ ubucargo package [<INPUT> [<VERSION>]] [--package-dir <DIR>] \
 - Run `ubucargo package <CRATE> [<VERSION>]` outside a package to create or update its default source-package directory.
 - Run `ubucargo package` inside an existing package to regenerate its current release.
 - Run `ubucargo package <CRATE> <VERSION>` against an existing package to select another release.
-- Run `ubucargo package local:<PATH> --package-dir <DIR>` to create or update a package from a local crate that is not on crates.io. The two directories must be separate and non-nested.
+- Run `ubucargo package local:<PATH> --package-dir <DIR>` to create or update a package from a local crate that is not on crates.io. The two directories must be separate and non-nested. [Local builds](docs/package.md#local-builds) use a fixed `+local` version suffix and replace their local orig as the source changes.
 - Use `--config <PATH>` to supply the initial `debcargo.toml` when creating a new package.
 - Use `--prepare-only` to prepare the upstream source tree without generating packaging. It is useful when switching to a new upstream version, where full package generation could fail due to the existing quilt patches not applying cleanly.
 - Regenerating a released package creates a new `UNRELEASED` changelog entry; subsequent runs update that entry.

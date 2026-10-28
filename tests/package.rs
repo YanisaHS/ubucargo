@@ -81,7 +81,8 @@ fn create_and_upgrade_package() {
         &["local:crate", "--package-dir", "packages/rust-example"],
         0,
     );
-    assert!(packages.join("rust-example_1.0.0.orig.tar.gz").is_file());
+    let initial_orig = packages.join("rust-example_1.0.0+local.orig.tar.gz");
+    let initial_bytes = fs::read(&initial_orig).unwrap();
     assert!(package.join("debian/debcargo.toml").is_file());
     assert!(package.join("debian/ubucargo-state.json").is_file());
     assert_eq!(
@@ -95,7 +96,7 @@ fn create_and_upgrade_package() {
     assert!(control.contains("Maintainer: Ubuntu Developers"));
     let changelog_path = package.join("debian/changelog");
     let changelog = fs::read_to_string(&changelog_path).unwrap();
-    assert!(changelog.starts_with("rust-example (1.0.0-0ubuntu1) UNRELEASED;"));
+    assert!(changelog.starts_with("rust-example (1.0.0+local-0ubuntu1) UNRELEASED;"));
 
     run_package(root, &["pkg:packages/rust-example"], 0);
     assert_eq!(fs::read_to_string(&control_path).unwrap(), control);
@@ -105,18 +106,37 @@ fn create_and_upgrade_package() {
     fs::write(&changelog_path, &released).unwrap();
     write_crate_manifest(root, "1.0.1");
     run_package(root, &["pkg:packages/rust-example"], 0);
-    assert!(packages.join("rust-example_1.0.1.orig.tar.gz").is_file());
-    assert!(packages.join("rust-example_1.0.0.orig.tar.gz").is_file());
+    let upgraded_orig = packages.join("rust-example_1.0.1+local.orig.tar.gz");
+    let upgraded_bytes = fs::read(&upgraded_orig).unwrap();
+    assert_eq!(fs::read(&initial_orig).unwrap(), initial_bytes);
     assert!(
         fs::read_to_string(package.join("Cargo.toml"))
             .unwrap()
             .contains("version = \"1.0.1\"")
     );
     let upgraded = fs::read_to_string(&changelog_path).unwrap();
-    assert!(upgraded.starts_with("rust-example (1.0.1-0ubuntu1) UNRELEASED;"));
+    assert!(upgraded.starts_with("rust-example (1.0.1+local-0ubuntu1) UNRELEASED;"));
     assert!(upgraded.ends_with(&released));
 
     run_package(root, &["pkg:packages/rust-example"], 0);
+    assert_eq!(fs::read_to_string(&changelog_path).unwrap(), upgraded);
+
+    let config_path = package.join("debian/debcargo.toml");
+    let config = fs::read_to_string(&config_path).unwrap();
+    let updated = "/// Updated value.\npub const VALUE: u8 = 2;\n";
+    fs::write(root.join("crate/src/lib.rs"), updated).unwrap();
+    run_package(root, &["pkg:packages/rust-example"], 0);
+    let updated_bytes = fs::read(&upgraded_orig).unwrap();
+    assert_ne!(updated_bytes, upgraded_bytes);
+    assert_eq!(fs::read_to_string(&changelog_path).unwrap(), upgraded);
+    assert_eq!(fs::read(&initial_orig).unwrap(), initial_bytes);
+    assert_eq!(fs::read_to_string(&config_path).unwrap(), config);
+    assert_eq!(
+        fs::read_to_string(package.join("src/lib.rs")).unwrap(),
+        updated
+    );
+    run_package(root, &["pkg:packages/rust-example"], 0);
+    assert_eq!(fs::read(&upgraded_orig).unwrap(), updated_bytes);
     assert_eq!(fs::read_to_string(&changelog_path).unwrap(), upgraded);
 }
 
@@ -335,7 +355,16 @@ fn repack_source() {
     );
     let packages = root.join("packages");
     let package = packages.join("rust-example");
+    // Model a maintained published release as the baseline for its first repack.
     let original_orig = packages.join("rust-example_1.0.0.orig.tar.gz");
+    fs::rename(
+        packages.join("rust-example_1.0.0+local.orig.tar.gz"),
+        &original_orig,
+    )
+    .unwrap();
+    let changelog_path = package.join("debian/changelog");
+    let changelog = fs::read_to_string(&changelog_path).unwrap();
+    fs::write(&changelog_path, changelog.replace("1.0.0+local", "1.0.0")).unwrap();
     let original_bytes = fs::read(&original_orig).unwrap();
     let config_path = package.join("debian/debcargo.toml");
     let config = fs::read_to_string(&config_path).unwrap();
@@ -343,7 +372,7 @@ fn repack_source() {
     fs::write(&config_path, &repack_config).unwrap();
 
     run_package(root, &["pkg:packages/rust-example"], 0);
-    let repacked_orig = packages.join("rust-example_1.0.0+dfsg.orig.tar.gz");
+    let repacked_orig = packages.join("rust-example_1.0.0+dfsg+local.orig.tar.gz");
     assert!(repacked_orig.is_file());
     assert_eq!(fs::read(&original_orig).unwrap(), original_bytes);
     assert!(!package.join("bundled.txt").exists());
@@ -360,7 +389,7 @@ fn repack_source() {
     assert!(
         fs::read_to_string(package.join("debian/changelog"))
             .unwrap()
-            .starts_with("rust-example (1.0.0+dfsg-0ubuntu1) UNRELEASED;")
+            .starts_with("rust-example (1.0.0+dfsg+local-0ubuntu1) UNRELEASED;")
     );
     assert_eq!(fs::read_to_string(&config_path).unwrap(), repack_config);
 }

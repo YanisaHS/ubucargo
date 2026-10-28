@@ -110,7 +110,7 @@ pub fn validate_separate_trees(input: &Path, destination: &Path) -> Result<()> {
 /// Configuration paths are resolved against the maintained input before this call.
 pub fn resolve_package(
     request: CrateRequest<'_>,
-    config: PackageConfig,
+    mut config: PackageConfig,
     existing: Option<ExistingPackage>,
     crates_io_api: &str,
 ) -> Result<ResolvedPackage> {
@@ -180,16 +180,17 @@ pub fn resolve_package(
             None
         },
     );
-    let repack_suffix = if let Some(suffix) = &config.repack_suffix {
-        Some(suffix.as_str())
-    } else if config.has_excludes {
-        Some(debcargo::compat::get_default_repack_suffix(
-            &debcargo_version,
-        ))
-    } else {
-        None
-    };
-    let upstream = cargo_to_debian_upstream_version(&version, repack_suffix);
+    if config.repack_suffix.is_none() && config.has_excludes {
+        config.repack_suffix =
+            Some(debcargo::compat::get_default_repack_suffix(&debcargo_version).to_owned());
+    }
+    if config.resolved_crate_src_path.is_some() {
+        config.repack_suffix = Some(match config.repack_suffix {
+            Some(suffix) => format!("{suffix}+local"),
+            None => "local".to_owned(),
+        });
+    }
+    let upstream = cargo_to_debian_upstream_version(&version, config.repack_suffix.as_deref());
     Ok(ResolvedPackage {
         config,
         crate_selection,

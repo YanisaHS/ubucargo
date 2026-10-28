@@ -63,7 +63,7 @@ For crates.io and local crate inputs, an existing destination supplies configura
 
 `local:<PATH>` requires an explicit `--package-dir`. The resolved crate and package directories must be separate, non-nested directory trees. For an existing package, the explicit local path must resolve to the same directory as the saved `crate_src_path`. To change the source location or switch to local source, edit `debian/debcargo.toml` first. Subsequent runs resolve that setting automatically. Local Cargo inputs use Cargo metadata to resolve workspace-inherited versions.
 
-Orig tarballs remain beside the destination directory. An existing orig tarball with different contents causes an error before writing to the destination.
+Orig tarballs remain beside the destination directory. Registry-source packages require matching contents for an existing orig filename. Local-source packages replace their generated `+local` orig as the source changes.
 
 Output identifies the operation as `Create new package: <DIR>`, `Update existing package: <DIR>`, or `Create package from existing packaging: <DIR>`. The last form describes a package copy or a published input that carries maintained packaging into a new destination.
 
@@ -97,7 +97,21 @@ The selected release must belong to the same Cargo crate as the existing root `C
 
 Cargo's release selection considers version constraints and publication eligibility. If the selected crate's `[package]` table in `Cargo.toml` declares `rust-version`, debcargo includes that minimum version in the generated Debian `rustc` dependencies.
 
-Local-source packaging requires dependencies to be resolvable from crates.io during generation. The generated Debian package builds against dependencies declared from the Ubuntu Archive. A local working tree is suitable for iteration; an Archive upload should use a fixed upstream release or snapshot, with a distinct upstream version for each differing orig-tarball content.
+Local-source packaging requires dependencies to be resolvable from crates.io during generation. The generated Debian package builds against dependencies declared from the Ubuntu Archive. Local outputs are disposable development builds. Prepare Archive uploads from published crates.io releases, with `crate_src_path` removed from the configuration.
+
+### Local builds
+
+`package` gives local source selected through `local:<PATH>` or `crate_src_path` a fixed `+local` suffix. For example, Cargo version `0.1.7` produces Debian upstream version `0.1.7+local` and orig filename `rust-ubucargo_0.1.7+local.orig.tar.gz`.
+
+Each run generates the package once. Matching orig bytes are reused; changed contents replace the local orig under the same filename. The old orig is captured in staging as the source-merge baseline before replacement. This also applies to `--prepare-only` and package copies. Published release origs retain their separate filenames and normal content checks.
+
+An explicit or default repack suffix precedes the local suffix: `repack_suffix = "ds"` produces `0.1.7+ds+local`. Ubucargo passes the combined suffix through its temporary debcargo configuration; the maintained configuration retains the original setting.
+
+Local versions sort after their base version: `0.1.7 < 0.1.7+local < 0.1.8`. Keeping the last released Cargo version during development lets the next release supersede its local builds. Local builds allow version changes in either direction as the working tree or repack configuration changes.
+
+Use separate parent directories for independent development package trees, since the orig beside a local package is mutable. Rebuild `.dsc` and `.changes` files after changing local orig contents so their checksums match the current archive.
+
+To package the next published release, remove `crate_src_path` from `debian/debcargo.toml` and select that release, for example `ubucargo package ubucargo 0.1.8`.
 
 ## Examples
 
@@ -221,9 +235,9 @@ The orig tarball is placed beside the source directory using Debian naming:
 
 When repacking is not required, debcargo copies the verified `.crate` archive unchanged. Matching `excludes` entries cause debcargo to rebuild the orig tarball without those paths. `repack_suffix` supplies the suffix added to the Debian upstream version.
 
-An explicit `repack_suffix` in `debian/debcargo.toml` is used as written. When `excludes` is present, the installed debcargo supplies the default: `dfsg` in 2.8.2 and 2.8.3, or `ds` starting with 2.8.4. With both settings omitted, the next upstream version uses the Cargo version alone. The existing changelog identifies the old package; the configuration and generator determine the next suffix. To retain `+dfsg` from an existing version such as `1.0.0+dfsg-1`, set `repack_suffix = "dfsg"` in the configuration.
+An explicit `repack_suffix` in `debian/debcargo.toml` supplies the repack portion of the upstream version. When `excludes` is present, the installed debcargo supplies the default: `dfsg` in 2.8.2 and 2.8.3, or `ds` starting with 2.8.4. Registry releases use the Cargo version alone when both settings are omitted. Local-source packages append their [`+local` suffix](#local-builds) to the resulting upstream version. The existing changelog identifies the old package; the configuration and generator determine the next suffix. To retain `+dfsg` from an existing version such as `1.0.0+dfsg-1`, set `repack_suffix = "dfsg"` in the configuration.
 
-For older crate archives containing an unnormalized manifest, debcargo 2.8.2 normalizes `Cargo.toml` inside the orig tarball and requires a repack suffix. Starting with 2.8.3, debcargo preserves the upstream manifest in the orig and supplies an automatic normalization patch. Changing generators can change orig contents, including for local-source packaging; use a distinct `repack_suffix` when the resulting bytes differ.
+For older crate archives containing an unnormalized manifest, debcargo 2.8.2 normalizes `Cargo.toml` inside the orig tarball and requires a repack suffix. Starting with 2.8.3, debcargo preserves the upstream manifest in the orig and supplies an automatic normalization patch. Changing generators can change orig contents; registry-source packaging requires a distinct `repack_suffix` when the resulting bytes differ, and local-source packaging replaces its local orig.
 
 For an existing package, the old orig tarball is the source-merge baseline. Its source name and upstream version come from the top changelog entry. Ubucargo first looks beside the package, then uses `pull-lp-source --download-only <SOURCE> <VERSION>` to retrieve that exact Ubuntu source version independently of the host's configured APT series. The verified orig is saved beside the existing package immediately and remains available for retries if a later step fails. Acquisition happens before the staged changelog is changed.
 
@@ -231,7 +245,7 @@ When the source name changes, the existing changelog still identifies the old or
 
 `pull-lp-source` verifies the downloaded source files against their `.dsc`; ubucargo only checks that the expected orig tarball was produced. If no old orig can be found, ubucargo stops; `--force` does not bypass a missing merge baseline.
 
-If the candidate orig path already exists, ubucargo reuses it when its bytes match the fresh debcargo result and rejects it when they differ, before writing to the destination. Conflicting orig tarballs are rejected for both package creation and updates, even with `--force`. When repacking changes the orig tarball, use a new `repack_suffix`, such as `ds2`, to give the new orig a distinct upstream version and filename. Other orig tarballs beside the package are left unchanged.
+If the candidate orig path already exists, ubucargo reuses it when its bytes match the fresh debcargo result. For local-source builds, changed contents replace the generated main `+local` orig through an atomic file replacement. Other conflicting orig tarballs cause an error before writing to the destination, even with `--force`. When repacking a registry release changes the orig tarball, use a new `repack_suffix`, such as `ds2`, to give the new orig a distinct upstream version and filename. Other orig tarballs beside the package retain their contents.
 
 ### Source merge
 

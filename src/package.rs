@@ -290,7 +290,12 @@ pub fn run(args: PackageArgs, crates_io_api: &str) -> Result<()> {
                 bail!("could not restore the original top quilt patch {top}");
             }
         }
-        write_package(package, &overrides)?;
+        let mutable_orig = if resolved.config.resolved_crate_src_path.is_some() {
+            generated.orig.file_name()
+        } else {
+            None
+        };
+        write_package(package, &overrides, mutable_orig)?;
     }
     Ok(())
 }
@@ -531,7 +536,7 @@ fn create_new(root: &Path, config: &PackageConfig, generated: &GeneratedPackage)
             .context("candidate orig has no file name")?,
     );
     let orig_changed = files_differ(&generated.orig, &orig)?;
-    if orig_changed && orig.try_exists()? {
+    if orig_changed && orig.try_exists()? && config.resolved_crate_src_path.is_none() {
         bail!("{} already exists with different contents", orig.display());
     }
     println!("Create {}", root.display());
@@ -540,7 +545,10 @@ fn create_new(root: &Path, config: &PackageConfig, generated: &GeneratedPackage)
     }
     fs::create_dir_all(parent).with_context(|| format!("create {}", parent.display()))?;
     if orig_changed {
-        fs::copy(&generated.orig, &orig).with_context(|| format!("write {}", orig.display()))?;
+        let temporary = tempfile::NamedTempFile::new_in(parent)?;
+        fs::copy(&generated.orig, temporary.path())
+            .with_context(|| format!("write {}", orig.display()))?;
+        temporary.persist(&orig)?;
     }
     copy_tree(&generated.source, root)?;
     Ok(())

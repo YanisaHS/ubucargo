@@ -9,6 +9,7 @@ use crate::{
 use anyhow::{Context, Result, bail};
 use std::{
     collections::BTreeMap,
+    ffi::OsStr,
     fs,
     path::{Path, PathBuf},
     process::Command,
@@ -143,7 +144,12 @@ pub fn acquire_package(
 }
 
 /// Reports upstream and packaging changes, then writes the completed staged package.
-pub fn write_package(package: &SourcePackage, overrides: &[PathBuf]) -> Result<()> {
+/// The selected local orig may replace an earlier development build's archive.
+pub fn write_package(
+    package: &SourcePackage,
+    overrides: &[PathBuf],
+    mutable_orig: Option<&OsStr>,
+) -> Result<()> {
     if !package.update {
         require_absent(&package.destination)?;
     }
@@ -169,7 +175,7 @@ pub fn write_package(package: &SourcePackage, overrides: &[PathBuf]) -> Result<(
             if !files_differ(&entry.path(), &target)? {
                 continue;
             }
-            if target.try_exists()? {
+            if target.try_exists()? && mutable_orig != Some(name.as_os_str()) {
                 bail!(
                     "{} already exists with different contents",
                     target.display()
@@ -229,7 +235,10 @@ pub fn write_package(package: &SourcePackage, overrides: &[PathBuf]) -> Result<(
     }
     fs::create_dir_all(parent)?;
     for (source, target) in orig_tarballs {
-        fs::copy(source, target)?;
+        let temporary = tempfile::NamedTempFile::new_in(parent)?;
+        fs::copy(&source, temporary.path())
+            .with_context(|| format!("write {}", target.display()))?;
+        temporary.persist(&target)?;
     }
     if package.update {
         plan.apply(&package.destination)

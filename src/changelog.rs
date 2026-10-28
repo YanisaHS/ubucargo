@@ -71,6 +71,10 @@ pub fn prepare_changelog(
         .arg("--distribution")
         .arg("UNRELEASED")
         .arg("--force-distribution");
+    if package.config.resolved_crate_src_path.is_some() {
+        // Local builds can follow working trees between versions in either direction.
+        command.arg("--force-bad-version");
+    }
     let source_name = package.source_name.as_str();
     let upstream = package.upstream.as_str();
     let initial_version = format!("{upstream}-0ubuntu1");

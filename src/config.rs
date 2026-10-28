@@ -16,7 +16,7 @@ pub struct PackageConfig {
     pub original_contents: String,
     /// Whether the Debian source name includes the crate's semver line; defaults to false.
     pub semver_suffix: bool,
-    /// Explicit repack suffix, with the installed debcargo supplying the default.
+    /// Effective repack suffix, including resolved defaults and the local-source suffix.
     pub repack_suffix: Option<String>,
     /// Whether `excludes` is configured, enabling debcargo's default repack suffix.
     pub has_excludes: bool,
@@ -156,6 +156,9 @@ fn parse_package_config(
 /// Absolute source paths retain their meaning when the configuration moves into staging.
 pub fn write_staged_config(config: &PackageConfig, stage: &Path) -> Result<()> {
     let mut document: DocumentMut = config.original_contents.parse()?;
+    if let Some(suffix) = &config.repack_suffix {
+        document["repack_suffix"] = value(suffix);
+    }
     if let Some(crate_src_path) = &config.resolved_crate_src_path {
         document["crate_src_path"] = value(require_utf8_path(crate_src_path)?);
     }
