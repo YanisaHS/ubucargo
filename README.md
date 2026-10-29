@@ -60,7 +60,7 @@ On Ubuntu 24.04 LTS, the packaged Rust toolchain is too old to build ubucargo, a
 cargo install debcargo --version '^2.8.2' --locked
 ```
 
-Ubucargo follows the installed debcargo's behavior, so generated output can vary between versions. CI exercises debcargo 2.8.2 and 2.8.4. See [debcargo compatibility](docs/package.md#debcargo-compatibility) for details.
+Ubucargo follows the installed debcargo's behavior, so generated output can vary between versions. See [debcargo compatibility](docs/package.md#debcargo-compatibility) for details.
 
 Debian sources and dependency environments additionally require the `debian-archive-keyring` package to be installed.
 
