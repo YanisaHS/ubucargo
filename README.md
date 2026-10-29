@@ -54,7 +54,7 @@ sudo apt install cargo debcargo devscripts dpkg-dev distro-info ubuntu-dev-tools
   ubuntu-keyring quilt curl gnupg pkg-config libssl-dev
 ```
 
-On Ubuntu 24.04 LTS, the packaged Rust toolchain is too old to build ubucargo, and the packaged debcargo is older than 2.8.2. Run the same command without `cargo` and `debcargo`. Then install a newer Rust toolchain, for example with [rustup](https://rustup.rs/), and install debcargo with Cargo, as the CI workflow does:
+On Ubuntu 24.04 LTS, the packaged Rust toolchain is too old to build ubucargo, and the packaged debcargo is older than the minimum supported version of 2.8.2. Run the same command without `cargo` and `debcargo`. Then install a newer Rust toolchain, for example with [rustup](https://rustup.rs/), and install debcargo with Cargo, as the CI workflow does:
 
 ```sh
 cargo install debcargo --version '^2.8.2' --locked
