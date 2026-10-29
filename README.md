@@ -47,10 +47,6 @@ Each source package contains its upstream source, generator input `debcargo.toml
 
 ### Requirements
 
-It currently requires APT, Cargo, curl, GnuPG, quilt, devscripts, dpkg-dev, distro-info (for automatic development-series selection), GNU coreutils (including `sha256sum` and `sha512sum`), ubuntu-dev-tools, the Ubuntu archive keyring, and debcargo 2.8.2 or a later compatible 2.x release.
-
-Building on Ubuntu additionally requires `pkg-config` and `libssl-dev`. Crates.io HTTPS requests use the system OpenSSL library and system CA certificates through reqwest's `native-tls` backend.
-
 On Ubuntu 26.04 LTS, the following command installs these requirements:
 
 ```sh
