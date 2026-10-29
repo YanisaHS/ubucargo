@@ -148,4 +148,4 @@ See [`docs/deps.md`](docs/deps.md) for details.
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, checks, and code style.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and how to run checks locally.
